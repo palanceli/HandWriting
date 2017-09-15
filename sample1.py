@@ -170,8 +170,24 @@ class samples(object):
 
 		self.waitToClose(img)
 
+	def case0905(self):
+		# 为源图扩边
+		src = cv2.imread('sample01.jpg')
+		# 参数含义
+		# 输入图像，top, bottom, left, right, BorderType, 边界颜色
+		# 	BorderType的类型：
+		#	cv2.BORDER_CONSTANT 添加有颜色的常数边界，还需要下一个参数value
+		#	cv2.BORDER_REFLECT 边界元素的镜像。比如: fedcba|abcdefgh|hgfedcb
+		#	cv2.BORDER_REFLECT_101 or cv2.BORDER_DEFAULT跟上面一样，但稍作改动。例如: gfedcb|abcdefgh|gfedcba
+		#	cv2.BORDER_REPLICATE 重复最后一个元素。例如: aaaaaa|abcdefgh|hhhhhhh
+		#	cv2.BORDER_WRAP 不知道怎么说了, 就像这样: cdefgh|abcdefgh|abcdefg
+		img = cv2.copyMakeBorder(src, 10, 10, 10, 10, cv2.BORDER_REPLICATE)
+		img = cv2.copyMakeBorder(src, 10, 10, 10, 10, cv2.BORDER_REFLECT)
+		self.waitToClose(img)
+
+
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.case0901()
+    s.case0905()
