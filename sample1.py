@@ -139,11 +139,11 @@ class samples(object):
 
 		# img.item(x, y, iRGB) iRGB：0 - B, 1 - G, 2 - R
 		logging.debug(img.item(10, 10, 2))
-		for i in range(300):
+		for i in range(200):
 			img.itemset((10, i, 0), 255)
-		for i in range(300):
+		for i in range(200):
 			img.itemset((20, i, 1), 255)
-		for i in range(300):
+		for i in range(200):
 			img.itemset((30, i, 2), 255)
 
 		logging.debug(img.shape)	# (rows, cols, type)
@@ -183,11 +183,33 @@ class samples(object):
 		#	cv2.BORDER_WRAP 不知道怎么说了, 就像这样: cdefgh|abcdefgh|abcdefg
 		img = cv2.copyMakeBorder(src, 10, 10, 10, 10, cv2.BORDER_REPLICATE)
 		img = cv2.copyMakeBorder(src, 10, 10, 10, 10, cv2.BORDER_REFLECT)
+		img = cv2.copyMakeBorder(src, 10, 10, 10, 10, cv2.BORDER_REFLECT_101)
+		img = cv2.copyMakeBorder(src, 10, 10, 10, 10, cv2.BORDER_WRAP)
+		blue = (255, 0, 0)
+		img = cv2.copyMakeBorder(src, 10, 10, 10, 10, cv2.BORDER_CONSTANT, blue) # 为什么画出来的不是蓝色？
 		self.waitToClose(img)
+
+	def case1001(self):
+		# 算术运算
+		x = numpy.uint8([250])
+		y = numpy.uint8([10])
+		logging.debug(cv2.add(x, y))	# opencv 是饱和操作 	250+10 => 255
+		logging.debug(x + y)			# numpy  是模操作		250+10 => 4
+
+	def case1002(self):
+		# 图像混合，混合处理的公式是将两个图片每个像素做如下处理：
+		# g(x) = (1-α)img1 + αimg2 + γ  α∈(0, 1)
+		img1 = cv2.imread('sample01.jpg')
+		height1, width1, nColor1 = img1.shape
+		img2 = cv2.imread('sample02.png')
+		img2 = cv2.resize(img2, (width1, height1)) 	# 图片拉伸，把img2拉成和img1同样大小
+		dst = cv2.addWeighted(img1, 0.7, img2, 0.3, 0) # 其中α=0.3，γ=0
+		self.waitToClose(dst)
+
 
 
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.case0905()
+    s.case0701()
