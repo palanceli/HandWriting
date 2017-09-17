@@ -207,7 +207,6 @@ class samples(object):
 		self.waitToClose(dst)
 
 
-
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
