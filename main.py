@@ -184,7 +184,7 @@ class MagicPenApp(object):
 			if pressedKey == -1:
 				continue
 
-			logging.debug(pressedKey)
+			# logging.debug(pressedKey)
 			if pressedKey & 0xFF == 27:	# ESC 	退出
 				break
 			elif pressedKey & 0xFF == ord('c'):	# clean 	清屏
@@ -198,9 +198,11 @@ class MagicPenApp(object):
 			elif pressedKey & 0xFF == ord('p'): # polyline 	显示抗锯齿曲线
 				self.conf.set('showPolyLine', (not self.conf.get('showPolyLine')))
 				self.pen.Redraw()
-			elif pressedKey & 0xFF == 102: 		# F2 Save 		保存原始轨迹数据
+			elif pressedKey & 0xFF == 120: 		# F2 Save 		保存原始轨迹数据
+				logging.debug('saving...')
 				self.pen.SaveOriginTrack()
 			elif pressedKey & 0xFF == 96: 		# F5 Load 		加载原始轨迹数据
+				logging.debug('loading...')
 				self.pen.LoadOriginTrack()
 				self.pen.Redraw()
 
