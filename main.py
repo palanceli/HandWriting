@@ -9,7 +9,8 @@ import math
 import sys
 
 class MPLine(object):
-	# 这是一条笔迹线
+	# MPLine记录一条笔画，其中x y t是原始数据，由该类负责记录和保存，
+	# extra是附加数据，也是和笔迹相关的数据，由调用方负责产生，MPLine只负责记录
 	def __init__(self):
 		# 每个元素是一个[x, y, t, extra] = MPPoint
 		# x y t是基本值，extra是由笔迹效果根据基本值计算出来的
@@ -39,6 +40,7 @@ class MPLine(object):
 		return len(self.line)
 
 class MPTracker(object):
+	# 笔迹是由笔画（线）组成，笔画由点组成，MPTracker保存笔画的集合
 	def __init__(self):
 		# 这是一个笔迹数组，每个元素都是MPLine
 		self.trackList = []
@@ -84,6 +86,7 @@ class MPTracker(object):
 					self.trackList.append(newLine)
 
 class MagicPenConf(object):
+	# 记录配置
 	def __init__(self):
 		self.conf = {'showOrigin' : True, 'showOriginLine' : False, 'showPolyLine' : True,
 		'showCTan':False}
@@ -95,12 +98,14 @@ class MagicPenConf(object):
 		return self.conf[key]
 
 class MagicPen(object):
+	# MagicPen相当于一个抽象类，只负责记录原始笔迹，以及绘制原始笔迹
 	def __init__(self, img, imgName, conf):
 		self.mpTracker = MPTracker()
 		self.img = img
 		self.imgName = imgName
 		self.conf = conf
 
+	# {{ Begin、Continue、End 负责记录原始笔迹 }}
 	def Begin(self, x, y):
 		return self.mpTracker.AddBegin(x, y)
 
@@ -137,6 +142,7 @@ class MagicPen(object):
 				color = (128, 128, 128)
 				cv2.polylines(self.img, polyLine, False, color, 1, cv2.LINE_AA)
 
+	# SaveTrack、LoadTrack 保存和加载原始笔迹
 	def SaveTrack(self):
 		self.mpTracker.Save()
 
@@ -171,9 +177,9 @@ class MPBrushExtra(object):
 		distance = math.sqrt((y1 - y0)**2 + (x1 - x0)**2)
 		v = distance * 1000000 / (t1 - t0)
 		# logging.debug('%d / %d = %.2f' % (distance * 1000000, t1 - t0, v))
-		logging.debug(cv2.log(v)[0][0])
+		# logging.debug(cv2.log(v)[0][0])
 		width = width / (1 + cv2.exp(cv2.log(v)[0][0]))[0][0]
-		logging.debug(width)
+		# logging.debug(width)
 		# width += v[0][0]
 		# logging.debug('(%d, %d) - (%d, %d) = %d' % (x1, y1, x0, y0, distance))
 		if distance == 0:
@@ -260,10 +266,11 @@ class MagicPenBrush(MagicPen):
 
 class MagicPenApp(object):
 	def __init__(self):
-		self.img = self.createImg()
+		# 负责创建全局资源
+		self.img = self.createImg()	# 画布
 		self.imgName = 'image'
-		self.conf = MagicPenConf()
-		self.pen = MagicPenBrush(self.img, self.imgName, self.conf)
+		self.conf = MagicPenConf()	# 配置
+		self.pen = MagicPenBrush(self.img, self.imgName, self.conf)	# 画笔
 
 	def createImg(self):
 		img = numpy.zeros((500, 899, 3), numpy.uint8)
@@ -274,6 +281,7 @@ class MagicPenApp(object):
 		cv2.imshow(self.imgName, self.img)
 		cv2.moveWindow(self.imgName, 100, 100)
 
+		# 将起笔、运笔、抬笔交给画笔处理
 		def mouseCallback(event, x, y, flags, param):
 			app = param
 			if event == cv2.EVENT_LBUTTONDOWN:
@@ -284,7 +292,8 @@ class MagicPenApp(object):
 				app.pen.End(x, y)
 
 		cv2.setMouseCallback(self.imgName, mouseCallback, self)
-		
+
+		# 响应快捷键
 		while True:
 			cv2.imshow(self.imgName, self.img)
 			pressedKey = cv2.waitKey(10)	# 等待10ms，如果无按键，返回-1
