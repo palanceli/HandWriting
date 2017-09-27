@@ -14,18 +14,18 @@ class MPLine(object):
 	def __init__(self):
 		# 每个元素是一个[x, y, t, extra] = MPPoint
 		# x y t是基本值，extra是由笔迹效果根据基本值计算出来的
-		self.line = []
+		self.data = []
 
 	def Add(self, x, y, t=None):
 		if t == None:
 			t = cv2.getTickCount()
 		point = [x, y, t, None]
-		self.line.append(point)
+		self.data.append(point)
 		return point
 
 	def ToString(self):
 		lineString = ''
-		for point in self.line:
+		for point in self.data:
 			x, y, t = point[0], point[1], point[2]
 			lineString += '[%d,%d,%d]' % (x, y, t)
 		return lineString
@@ -37,7 +37,7 @@ class MPLine(object):
 			self.Add(int(x), int(y), int(t))
 
 	def GetPointNum(self):
-		return len(self.line)
+		return len(self.data)
 
 class MPTracker(object):
 	# 笔迹是由笔画（线）组成，笔画由点组成，MPTracker保存笔画的集合
@@ -54,18 +54,18 @@ class MPTracker(object):
 
 	def AddContinue(self, x, y, t=None):
 		if len(self.trackList) == 0:
-			return self.BeginTrack(x, y, t)
+			return self.AddBegin(x, y, t)
 		lastLine = self.trackList[-1]
 		# 如果x,y和前一个点坐标一致，就不再加了
 		if lastLine.GetPointNum() > 0:
-			lastPoint = lastLine.line[-1]
+			lastPoint = lastLine.data[-1]
 			if lastPoint[0] == x and lastPoint[1] == y:
 				return lastLine
 		lastLine.Add(x, y, t)
 		return lastLine
 
 	def AddEnd(self, x, y, t=None):
-		return self.ContinueTrack(x, y, t)
+		return self.AddContinue(x, y, t)
 
 	def Clean(self):
 		self.trackList = []
@@ -82,13 +82,13 @@ class MPTracker(object):
 			for line in f:
 				newLine = MPLine()
 				newLine.FromString(line)
-				if len(newLine.line) > 0:
+				if len(newLine.data) > 0:
 					self.trackList.append(newLine)
 
 class MagicPenConf(object):
 	# 记录配置
 	def __init__(self):
-		self.conf = {'showOrigin' : True, 'showOriginLine' : False, 'showPolyLine' : True,
+		self.conf = {'showOrigin' : True, 'showOriginLine' : True, 'showPolyLine' : True,
 		'showCTan':False}
 
 	def set(self, key, value):
@@ -119,28 +119,33 @@ class MagicPen(object):
 		self.mpTracker.Clean()
 		self.img[:, :] = (255, 255, 255)
 
-	def Redraw(self):
-		self.img[:, :] = (255, 255, 255)
-		for mpLine in self.mpTracker.trackList:
-			lastPoint = None
-			polyLine = []
-			for point in mpLine.line:
-				x, y, t = point[0], point[1], point[2]
-				self.drawX(x, y)
-				polyLine.append((x, y))
+	def redrawSingleLine(self, mpLine, redrawAll=False):
+		lastPoint = None
+		polyLine = []
+		dataLen = len(mpLine.data)
+		for point in mpLine.data:
+			# 只画最后几个点
+			if redrawAll == False and dataLen - mpLine.data.index(point) > 3:
+				continue
+			x, y, t = point[0], point[1], point[2]
+			self.drawX(x, y)
+			polyLine.append((x, y))
 
-				# 和前一个点连成线
-				if lastPoint == None:
-					lastPoint = point
-					continue
-				x0, y0, t0 = lastPoint[0], lastPoint[1], lastPoint[2]
-				self.drawOriginLine(x0, y0, x, y)
+			# 和前一个点连成线
+			if lastPoint == None:
 				lastPoint = point
+				continue
+			x0, y0, t0 = lastPoint[0], lastPoint[1], lastPoint[2]
+			self.drawOriginLine(x0, y0, x, y)
+			lastPoint = point
 
-			if self.conf.get('showPolyLine'):
-				polyLine = [numpy.array(polyLine, numpy.int32).reshape((-1, 1, 2))]
-				color = (128, 128, 128)
-				cv2.polylines(self.img, polyLine, False, color, 1, cv2.LINE_AA)
+		if self.conf.get('showPolyLine'):
+			polyLine = [numpy.array(polyLine, numpy.int32).reshape((-1, 1, 2))]
+			color = (128, 128, 128)
+			cv2.polylines(self.img, polyLine, False, color, 1, cv2.LINE_AA)
+
+	def Redraw(self, redrawAll=False):
+		return
 
 	# SaveTrack、LoadTrack 保存和加载原始笔迹
 	def SaveTrack(self):
@@ -166,28 +171,11 @@ class MagicPen(object):
 
 class MPBrushExtra(object):
 	# 附着在每个MPPoint 的extra数据
-	def __init__(self, x0, y0, t0, x1, y1, t1):
-		self.lx, self.ly = 0, 0
-		self.rx, self.ry = 0, 0
-		self.calc(x0, y0, t0, x1, y1, t1)
+	def __init__(self, lx, ly, rx, ry):
+		self.data = {'lx':int(lx), 'ly':int(ly), 'rx':int(rx), 'ry':int(ry)}
 
-	def calc(self, x0, y0, t0, x1, y1, t1):
-		# 根据前后两个点计算(x0, y0)法线上的左右两点
-		width = 10
-		distance = math.sqrt((y1 - y0)**2 + (x1 - x0)**2)
-		v = distance * 1000000 / (t1 - t0)
-		# logging.debug('%d / %d = %.2f' % (distance * 1000000, t1 - t0, v))
-		# logging.debug(cv2.log(v)[0][0])
-		width = width / (1 + cv2.exp(cv2.log(v)[0][0]))[0][0]
-		# logging.debug(width)
-		# width += v[0][0]
-		# logging.debug('(%d, %d) - (%d, %d) = %d' % (x1, y1, x0, y0, distance))
-		if distance == 0:
-			sys.exit(0)
-		deltaX = (y0 - y1) * width / distance
-		deltaY = (x1 - x0) * width / distance
-		self.lx, self.ly = int(x0 - deltaX), int(y0 - deltaY)
-		self.rx, self.ry = int(x0 + deltaX), int(y0 + deltaY)
+	def GetLR(self):
+		return self.data['lx'], self.data['ly'], self.data['rx'], self.data['ry'], 
 
 class MagicPenBrush(MagicPen):
 	def __init__(self, img, imgName, conf):
@@ -195,66 +183,93 @@ class MagicPenBrush(MagicPen):
 
 	def Begin(self, x, y):
 		MagicPen.Begin(self, x, y)
-		self.drawX(x, y)
 
-	def drawCTan(self, extra):
-		if not self.conf.get('showCTan'):
+	def createExtraData(self, line, isEnd=False):
+		if line is None or len(line.data) < 2:
 			return
-		color = (0, 0, 0)
-		cv2.line(self.img, (extra.lx, extra.ly), (extra.rx, extra.ry), color)
+
+		pt0 = line.data[-1]
+		x0, y0, t0 = pt0[0], pt0[1], pt0[2]
+		pt1 = line.data[-2]
+		x1, y1, t1 = pt1[0], pt1[1], pt1[2]
+		width = 10
+		distance = math.sqrt((y1 - y0)**2 + (x1 - x0)**2)
+		wdconst = width / distance
+		lx1 = x1 + (y0 - y1) * wdconst
+		ly1 = y1 + (x1 - x0) * wdconst
+		rx1 = x1 + (y1 - y0) * wdconst
+		ry1 = y1 + (x0 - x1) * wdconst
+		extraData = MPBrushExtra(lx1, ly1, rx1, ry1)
+		pt1[3] = extraData
+		return extraData
 
 	def Continue(self, x, y):
 		lastLine = MagicPen.Continue(self, x, y)
-		self.drawX(x, y)	# 绘制点
-
-		# 当前点和前一个点连成线
-		if lastLine.GetPointNum() <= 1: # 如果没有前一个点则返回
-			return
-		lastPoint = lastLine.line[-2]
-		x0, y0, t0 = lastPoint[0], lastPoint[1], lastPoint[2]
-		currPoint = lastLine.line[-1]
-		x1, y1, t1 = currPoint[0], currPoint[1], currPoint[2]
-		self.drawOriginLine(x0, y0, x1, y1)
-
-		# 根据前后两点计算前面一个点的extra数据
-		extra = MPBrushExtra(x0, y0, t0, x1, y1, t1)
-		lastPoint[3] = extra
-		self.drawCTan(extra)
+		extraData = self.createExtraData(lastLine, False)
 
 	def End(self, x, y):
-		self.Continue(x, y)
+		lastLine = self.Continue(x, y)
+		self.createExtraData(lastLine, True)
 
-	def Redraw(self):
-		MagicPen.Redraw(self)
+	def createCubic(self, x, y):		
+		funcInterp = scipy.interpolate.interp1d(x, y, 'cubic')			# 生成样条插值函数
 
+		xInterp = numpy.arange(1, 150, 1)
+		yInterp = funcInterp(xInterp)
+
+		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
+		ptsInterp = ptsInterp.reshape((-1, 1, 2))
+
+	def redrawSingleLine(self, mpLine, redrawAll=False):
+		MagicPen.redrawSingleLine(self, mpLine)
+
+		dataLen = len(mpLine.data)
+		for mpPoint in mpLine.data:
+			# 只画最后几个点相关的数据
+			currIndex = mpLine.data.index(mpPoint)
+			if redrawAll == False and dataLen - currIndex > 3:
+				continue
+
+			extra = mpPoint[3]
+			if extra == None:
+				continue
+
+			lx0, ly0 = extra.data['lx'], extra.data['ly']
+			rx0, rx1 = extra.data['rx'], extra.data['ry']
+
+			# 绘制法线
+			if self.conf.get('showCTan'):
+				color = (0, 0, 0)
+				cv2.line(self.img, (lx0, ly0), (rx0, ry0), color)
+
+			if currIndex >= 3:
+				lx1, ly1, rx1, ry1 = mpLine.data[currIndex - 1][3].GetLR()
+				lx2, ly2, rx2, ry2 = mpLine.data[currIndex - 2][3].GetLR()
+				lx3, ly3, rx3, ry3 = mpLine.data[currIndex - 3][3].GetLR()
+
+			lastExtra = lastPt[3]
+			lx1, ly1 = lastExtra.data['lx'], lastExtra.data['ly']
+			rx1, ry1 = lastExtra.data['rx'], lastExtra.data['ry']
+			polyLine = [(lx0, ly0), (lx1, ly1)]
+			polyLine = [numpy.array(polyLine, numpy.int32).reshape((-1, 1, 2))]
+			color = (128, 128, 128)
+			cv2.polylines(self.img, polyLine, True, color, 1)
+
+	def Redraw(self, redrawAll=False):
 		# 绘制每个点的法线段
 		color = (0, 0, 0)
 		for mpLine in self.mpTracker.trackList:
-			lastExtra = None
-			for mpPoint in mpLine.line:
-				extra = mpPoint[3]
-				if extra == None:
-					continue
-				self.drawCTan(extra)
-
-				if lastExtra == None:
-					lastExtra = extra
-					continue
-
-				polyLine = [(lastExtra.lx, lastExtra.ly), (extra.lx, extra.ly), 
-				(extra.rx, extra.ry), (lastExtra.rx, lastExtra.ry)]
-				polyLine = [numpy.array(polyLine, numpy.int32).reshape((-1, 1, 2))]
-				color = (128, 128, 128)
-				cv2.polylines(self.img, polyLine, True, color, 1)
-
-				lastExtra = extra
+			if redrawAll:
+				self.redrawSingleLine(mpLine, True)
+			elif mpLine == self.mpTracker.trackList[-1]:
+				self.redrawSingleLine(mpLine, False)
 
 	def LoadTrack(self):
 		MagicPen.LoadTrack(self)
 		# load extra 
 		for mpLine in self.mpTracker.trackList:
 			lastPoint = None
-			for mpPoint in mpLine.line:
+			for mpPoint in mpLine.data:
 				if lastPoint == None:
 					lastPoint = mpPoint
 					continue
@@ -286,44 +301,73 @@ class MagicPenApp(object):
 			app = param
 			if event == cv2.EVENT_LBUTTONDOWN:
 				app.pen.Begin(x, y)
+				app.pen.Redraw(False)
 			elif event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
 				app.pen.Continue(x, y)
+				app.pen.Redraw(False)
 			elif event == cv2.EVENT_LBUTTONUP:
 				app.pen.End(x, y)
+				app.pen.Redraw(False)
 
 		cv2.setMouseCallback(self.imgName, mouseCallback, self)
 
 		# 响应快捷键
 		while True:
+			font = cv2.FONT_HERSHEY_SIMPLEX
+			msg = '[c]lear    [o]rigin'
+			if self.conf.get('showOrigin'):
+				msg += '-Y'
+
+			msg += '    [l]ine origin'
+			if self.conf.get('showOriginLine'):
+				msg += '-Y'
+
+			msg += '    AA[p]oly-line'
+			if self.conf.get('showPolyLine'):
+				msg += '-Y'
+
+			msg += '     c[t]an'
+			if self.conf.get('showCTan'):
+				msg += '-Y'
+
+			msg += '    [F2]save    [F5]load'
+			cv2.putText(self.img, msg, (10, 490), font, 0.3, (0, 0, 0), 1)
+
 			cv2.imshow(self.imgName, self.img)
 			pressedKey = cv2.waitKey(10)	# 等待10ms，如果无按键，返回-1
 			if pressedKey == -1:
 				continue
 
 			# logging.debug(pressedKey)
+			needRedraw = False
 			if pressedKey & 0xFF == 27:	# ESC 	退出
 				break
 			elif pressedKey & 0xFF == ord('c'):	# clean 	清屏
-				self.pen.Clean()
+				needRedraw = True
 			elif pressedKey & 0xFF == ord('o'):	# origin 	是否显示原始点 
 				self.conf.set('showOrigin', (not self.conf.get('showOrigin')))
-				self.pen.Redraw()
+				needRedraw = True
 			elif pressedKey & 0xFF == ord('l'): # line 		是否显示连接线
 				self.conf.set('showOriginLine', (not self.conf.get('showOriginLine')))
-				self.pen.Redraw()
+				needRedraw = True
 			elif pressedKey & 0xFF == ord('p'): # polyline 	显示抗锯齿曲线
 				self.conf.set('showPolyLine', (not self.conf.get('showPolyLine')))
-				self.pen.Redraw()
+				needRedraw = True
 			elif pressedKey & 0xFF == ord('t'): # ctan 		绘制法线
 				self.conf.set('showCTan', (not self.conf.get('showCTan')))
-				self.pen.Redraw()
-			elif pressedKey & 0xFF == 120: 		# F2 Save 		保存原始轨迹数据
+				needRedraw = True
+			elif pressedKey & 0xFF == 120: 		# F2 Save 	保存原始轨迹数据
 				logging.debug('saving...')
 				self.pen.SaveTrack()
-			elif pressedKey & 0xFF == 96: 		# F5 Load 		加载原始轨迹数据
+				needRedraw = True
+			elif pressedKey & 0xFF == 96: 		# F5 Load 	加载原始轨迹数据
 				logging.debug('loading...')
 				self.pen.LoadTrack()
-				self.pen.Redraw()
+				needRedraw = True
+
+			if needRedraw:
+				self.pen.Clean()
+				self.pen.Redraw(True)
 
 		cv2.destroyAllWindows()
 

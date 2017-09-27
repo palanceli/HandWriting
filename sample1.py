@@ -5,6 +5,8 @@ import logging
 import os
 import numpy
 import cv2
+import scipy
+import scipy.interpolate
 
 class samples(object):
 	def waitToClose(self, img):
@@ -30,7 +32,7 @@ class samples(object):
 
 		pts = numpy.array([[10, 5], [20, 30], [70, 20], [50, 10]], numpy.int32)
 		pts = pts.reshape((-1, 1, 2))
-		cv2.polylines(img, pts, True, (255, 0, 0), 1)				# 多边形
+		cv2.polylines(img, [pts], True, (255, 0, 0), 1)				# 多边形
 
 		font = cv2.FONT_HERSHEY_SIMPLEX								# 文字
 		cv2.putText(img, 'OpenCV', (10, 500), font, 4, (255, 255, 255), 2)
@@ -206,9 +208,196 @@ class samples(object):
 		dst = cv2.addWeighted(img1, 0.7, img2, 0.3, 0) # 其中α=0.3，γ=0
 		self.waitToClose(dst)
 
+	def caseR01(self):
+		# 各种几何图形
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([[10, 10], [100, 10], [100, 100], [10, 100]], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
+		cv2.polylines(img, [pts], True, (0, 0, 0), 1)				# 多边形
+
+		mask = numpy.zeros((302, 302, 0), numpy.uint8)
+		mask[:] = 1
+
+		cv2.floodFill(img, mask, (50, 50), (0, 0, 0))#, (50,)*3, (50,)*3, 4)
+
+		self.waitToClose(img)
+
+	def caseR02(self):
+		# 填充多边形
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([[10, 10], [100, 10], [100, 100], [10, 100]], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
+		cv2.polylines(img, [pts], True, (0, 0, 0), 1)				# 多边形
+
+		mask = numpy.zeros((302, 302), numpy.uint8)
+		mask[:] = 0
+		fixed_range = True
+		connectivity = 4
+
+		while True:
+			ch = 0xFF & cv2.waitKey()
+			if ch == 27:
+				break
+			if ch == ord('f'):
+				fixed_range = not fixed_range #选定时flags的高位比特位0，也就是邻域的选定为当前像素与相邻像素的的差，这样的效果就是联通区域会很大
+				print 'using %s range' % ('floating', 'fixed')[fixed_range]
+			if ch == ord('c'):
+				connectivity = 12-connectivity #选择4方向或则8方向种子扩散
+				print 'connectivity =', connectivity
+
+			flooded = img.copy()
+			flags = connectivity
+			if fixed_range:
+				flags |= cv2.FLOODFILL_FIXED_RANGE 
+
+			seedPoint = (50, 50)
+			newVal = (0, 0, 0)
+			loDiff = (0, )
+			hiDiff = (0, )
+			# flood 	源图
+			# mask  	掩码图像，大小比原图多两个像素点。设输入图像大小为w * h ,
+			#		 	则掩码的大小必须为 (w + 2) * (h + 2) , mask可为输出，也可作为输入 ，由flags决定。
+			# seedPoint	起始填充标记点
+			# newVal	新的填充值
+			# loDiff 	为像素值的下限差值
+			# hiDiff 	为像素值的上限差值
+			# flags		0~7位为0x04或者0x08 即 4连通 或者 8连通，
+			#			8~15位为填充mask的值大小 , 若为0 ， 则默认用1填充 
+			# 			16~23位为 CV_FLOODFILL_FIXED_RANGE =(1 << 16), CV_FLOODFILL_MASK_ONLY =(1 << 17) 
+			# 
+			# 	flags参数通过位与运算处理：
+			# 	当为CV_FLOODFILL_FIXED_RANGE 待处理的像素点与种子点作比较，如果∈(s – lodiff , s + updiff)，
+			#			s为种子点像素值，则填充此像素。若无此位设置，则将待处理点与已填充的相邻点作此比较。
+			# 	当为CV_FLOODFILL_MASK_ONLY 此位设置填充的对像， 若设置此位，则mask不能为空，
+			# 			此时，函数不填充原始图像img，而是填充掩码图像. 若无此位设置，则在填充原始图像的时候，
+			#			也用flags的8~15位标记对应位置的mask.
+			cv2.floodFill(flooded, mask, seedPoint, newVal, loDiff, hiDiff, flags)
+
+			cv2.circle(flooded, seedPoint, 2, (0, 0, 255), -1) #选定基准点用红色圆点标出
+			cv2.imshow('floodfill', flooded)
+
+		cv2.destroyAllWindows() 
+
+	def caseR03(self):
+		# 拟合曲线
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([[0, 0], [50, 50], [100, 50], [150, 0]], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
+		# print(pts)
+
+		x = pts[:, 0][:, 0]
+		y = pts[:, 0][:, 1]
+
+		funcInterp = scipy.interpolate.interp1d(x, y, 'cubic')			# 生成样条插值函数
+
+		xInterp = numpy.arange(1, 150, 1)
+		yInterp = funcInterp(xInterp)
+
+		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
+		ptsInterp = ptsInterp.reshape((-1, 1, 2))
+
+		ptsInterp[:, 0][:, 0] = xInterp
+		ptsInterp[:, 0][:, 1] = yInterp
+
+		cv2.polylines(img, numpy.int32([ptsInterp]), True, (255, 0, 0), 1)		# 多边形
+		cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 原始点
+
+		mask = numpy.zeros((302, 302), numpy.uint8)
+		mask[:] = 0
+		fixed_range = True
+		connectivity = 4
+
+		flags = connectivity
+		if fixed_range:
+			flags |= cv2.FLOODFILL_FIXED_RANGE 
+
+		seedPoint = (10, 5)
+		newVal = (0, 0, 0)
+		loDiff = (0, )
+		hiDiff = (0, )
+		cv2.floodFill(img, mask, seedPoint, newVal, loDiff, hiDiff, flags)
+
+		self.waitToClose(img)
+
+	def caseR04(self):
+		# 拟合曲线
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([(240 , 200), (220, 320), (120, 200), (20, 320),(0, 160), (20, 0), (120, 120), (220, 0), (240, 120),], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
+
+		x = pts[:, 0][:, 0]
+		y = pts[:, 0][:, 1]
+
+		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
+		xInterp = numpy.linspace(0, 240, num=240, endpoint=True)
+		out = scipy.interpolate.splev(xInterp, tck)
+
+		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
+		ptsInterp = ptsInterp.reshape((-1, 1, 2))
+
+		ptsInterp[:, 0][:, 0] = xInterp
+		ptsInterp[:, 0][:, 1] = out[0]
+		cv2.polylines(img, numpy.int32([ptsInterp]), True, (255, 0, 0), 1)		# 多边形
+
+		logging.debug(numpy.int32(ptsInterp))
+		self.waitToClose(img)
+
+	def caseR04_2(self):
+		# 拟合曲线
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([(3 , 1), (2.5, 4), (0, 1), (-2.5, 4),(3, 0), (-2.5, -4), (0, -1), (2.5, -4), (3, -1),], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
+
+		x = pts[:, 0][:, 0]
+		y = pts[:, 0][:, 1]
+
+		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
+		xInterp = numpy.linspace(0, 1, num=50, endpoint=True)
+		out = scipy.interpolate.splev(xInterp, tck)
+
+		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
+		ptsInterp = ptsInterp.reshape((-1, 1, 2))
+
+		ptsInterp[:, 0][:, 0] = xInterp
+		ptsInterp[:, 0][:, 1] = out[0]
+		cv2.polylines(img, numpy.int32([ptsInterp]), True, (255, 0, 0), 1)		# 多边形
+
+		logging.debug(numpy.int32(ptsInterp))
+		self.waitToClose(img)
+
+	def caseR05(self):
+		# 拟合曲线
+		t = numpy.arange(0, 1.1, .1)
+		x = numpy.sin(2*numpy.pi*t)
+		y = numpy.cos(2*numpy.pi*t)
+		tck, u = scipy.interpolate.splprep([x, y], s=0)
+		unew = numpy.arange(0, 1.01, 0.01)
+		out = scipy.interpolate.splev(unew, tck)
+		
+		ptsInterp = numpy.zeros((len(unew), 2), numpy.float32)
+		ptsInterp = ptsInterp.reshape((-1, 1, 2))
+
+		ptsInterp[:, 0][:, 0] = (unew + 1) * 100
+		ptsInterp[:, 0][:, 1] = (out[0] + 1) * 100
+		logging.debug(x)
+		logging.debug(y)
+		# logging.debug(ptsInterp)
+
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+
+		cv2.polylines(img, numpy.int32([ptsInterp]), True, (255, 0, 0), 1)		# 多边形
+		# cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 原始点
+
+		self.waitToClose(img)
 
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.case0701()
+    s.caseR04()
