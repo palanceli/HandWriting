@@ -7,6 +7,8 @@ import numpy
 import cv2
 import scipy
 import scipy.interpolate
+import matplotlib
+import matplotlib.pyplot
 
 class samples(object):
 	def waitToClose(self, img):
@@ -333,38 +335,14 @@ class samples(object):
 		y = pts[:, 0][:, 1]
 
 		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
-		xInterp = numpy.linspace(0, 240, num=240, endpoint=True)
+		xInterp = numpy.linspace(0, 1, num=100, endpoint=True)
 		out = scipy.interpolate.splev(xInterp, tck)
 
 		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
 		ptsInterp = ptsInterp.reshape((-1, 1, 2))
 
-		ptsInterp[:, 0][:, 0] = xInterp
-		ptsInterp[:, 0][:, 1] = out[0]
-		cv2.polylines(img, numpy.int32([ptsInterp]), True, (255, 0, 0), 1)		# 多边形
-
-		logging.debug(numpy.int32(ptsInterp))
-		self.waitToClose(img)
-
-	def caseR04_2(self):
-		# 拟合曲线
-		img = numpy.zeros((300, 300, 3), numpy.uint8)
-		img[:, :] = (255, 255, 255)
-		pts = numpy.array([(3 , 1), (2.5, 4), (0, 1), (-2.5, 4),(3, 0), (-2.5, -4), (0, -1), (2.5, -4), (3, -1),], numpy.int32)
-		pts = pts.reshape((-1, 1, 2))
-
-		x = pts[:, 0][:, 0]
-		y = pts[:, 0][:, 1]
-
-		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
-		xInterp = numpy.linspace(0, 1, num=50, endpoint=True)
-		out = scipy.interpolate.splev(xInterp, tck)
-
-		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
-		ptsInterp = ptsInterp.reshape((-1, 1, 2))
-
-		ptsInterp[:, 0][:, 0] = xInterp
-		ptsInterp[:, 0][:, 1] = out[0]
+		ptsInterp[:, 0][:, 0] = out[0]
+		ptsInterp[:, 0][:, 1] = out[1]
 		cv2.polylines(img, numpy.int32([ptsInterp]), True, (255, 0, 0), 1)		# 多边形
 
 		logging.debug(numpy.int32(ptsInterp))
