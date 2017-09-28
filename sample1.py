@@ -326,7 +326,7 @@ class samples(object):
 
 	def caseR04(self):
 		# 拟合曲线
-		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img = numpy.zeros((350, 300, 3), numpy.uint8)
 		img[:, :] = (255, 255, 255)
 		pts = numpy.array([(240 , 200), (220, 320), (120, 200), (20, 320),(0, 160), (20, 0), (120, 120), (220, 0), (240, 120),], numpy.int32)
 		pts = pts.reshape((-1, 1, 2))
@@ -344,38 +344,81 @@ class samples(object):
 		ptsInterp[:, 0][:, 0] = out[0]
 		ptsInterp[:, 0][:, 1] = out[1]
 		cv2.polylines(img, numpy.int32([ptsInterp]), True, (255, 0, 0), 1)		# 多边形
+		cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 多边形
 
-		logging.debug(numpy.int32(ptsInterp))
+		# logging.debug(numpy.int32(ptsInterp))
+
+		pts = numpy.array([(240 , 200), (220, 320), (120, 200), (20, 320), (0, 160),], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
+
+		x = pts[:, 0][:, 0]
+		y = pts[:, 0][:, 1]
+
+		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
+		xInterp = numpy.linspace(0, 1, num=100, endpoint=True)
+		out = scipy.interpolate.splev(xInterp, tck)
+
+		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
+		ptsInterp = ptsInterp.reshape((-1, 1, 2))
+
+		ptsInterp[:, 0][:, 0] = out[0]
+		ptsInterp[:, 0][:, 1] = out[1]
+		cv2.polylines(img, numpy.int32([ptsInterp]), False, (0, 255, 0), 1)		# 多边形
+		cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 多边形
 		self.waitToClose(img)
 
 	def caseR05(self):
 		# 拟合曲线
-		t = numpy.arange(0, 1.1, .1)
-		x = numpy.sin(2*numpy.pi*t)
-		y = numpy.cos(2*numpy.pi*t)
-		tck, u = scipy.interpolate.splprep([x, y], s=0)
-		unew = numpy.arange(0, 1.01, 0.01)
-		out = scipy.interpolate.splev(unew, tck)
-		
-		ptsInterp = numpy.zeros((len(unew), 2), numpy.float32)
+		img = numpy.zeros((350, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([(240 , 200), (220, 320), (120, 200), (121, 201),], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
+
+		x = pts[:, 0][:, 0]
+		y = pts[:, 0][:, 1]
+
+		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
+		xInterp = numpy.linspace(0, 1, num=10, endpoint=True)
+		out = scipy.interpolate.splev(xInterp, tck)
+
+		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
 		ptsInterp = ptsInterp.reshape((-1, 1, 2))
 
-		ptsInterp[:, 0][:, 0] = (unew + 1) * 100
-		ptsInterp[:, 0][:, 1] = (out[0] + 1) * 100
-		logging.debug(x)
-		logging.debug(y)
-		# logging.debug(ptsInterp)
+		ptsInterp[:, 0][:, 0] = out[0]
+		ptsInterp[:, 0][:, 1] = out[1]
+		cv2.polylines(img, numpy.int32([ptsInterp]), False, (255, 0, 0), 1)		# 多边形
+		cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 多边形
+		cv2.polylines(img, numpy.int32(ptsInterp), True, (0, 0, 255), 2)		# 多边形
 
-		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		logging.debug(pts)
+		logging.debug(numpy.int32(ptsInterp))
+		self.waitToClose(img)
+
+	def caseR06(self):
+		img = numpy.zeros((350, 300, 3), numpy.uint8)
 		img[:, :] = (255, 255, 255)
+		pts = numpy.array([(240 , 200), (220, 320), (120, 200), (20, 320),], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
 
-		cv2.polylines(img, numpy.int32([ptsInterp]), True, (255, 0, 0), 1)		# 多边形
-		# cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 原始点
+		x = pts[:, 0][:, 0]
+		y = pts[:, 0][:, 1]
 
+		func = scipy.interpolate.interp1d(x, y, kind='linear')
+		xInterp = numpy.linspace(x.min(), x.max(), 1000)
+		yInterp = func(xInterp)
+
+		ptsInterp[:, 0][:, 0] = xInterp
+		ptsInterp[:, 0][:, 1] = yInterp
+		cv2.polylines(img, numpy.int32([ptsInterp]), False, (255, 0, 0), 1)		# 多边形
+		cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 多边形
+		cv2.polylines(img, numpy.int32(ptsInterp), True, (0, 0, 255), 2)		# 多边形
+
+		logging.debug(pts)
+		logging.debug(numpy.int32(ptsInterp))
 		self.waitToClose(img)
 
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.caseR04()
+    s.caseR06()

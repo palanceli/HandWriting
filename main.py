@@ -220,6 +220,17 @@ class MagicPenBrush(MagicPen):
 		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
 		ptsInterp = ptsInterp.reshape((-1, 1, 2))
 
+	def getBSPLine(self, xList, yList):
+		tck, u = scipy.interpolate.splprep([xList, yList], k=3, s=0)
+		xInterp = numpy.linspace(0, 1, num=100, endpoint=True)
+		out = scipy.interpolate.splev(xInterp, tck)
+
+		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
+		ptsInterp = ptsInterp.reshape((-1, 1, 2))
+
+		ptsInterp[:, 0][:, 0] = out[0]
+		ptsInterp[:, 0][:, 1] = out[1]
+
 	def redrawSingleLine(self, mpLine, redrawAll=False):
 		MagicPen.redrawSingleLine(self, mpLine)
 
@@ -227,25 +238,26 @@ class MagicPenBrush(MagicPen):
 		for mpPoint in mpLine.data:
 			# 只画最后几个点相关的数据
 			currIndex = mpLine.data.index(mpPoint)
-			if redrawAll == False and dataLen - currIndex > 3:
+			if redrawAll == False and dataLen - currIndex > 4:
 				continue
 
 			extra = mpPoint[3]
 			if extra == None:
 				continue
 
-			lx0, ly0 = extra.data['lx'], extra.data['ly']
-			rx0, rx1 = extra.data['rx'], extra.data['ry']
+			lx0, ly0, rx0, ry0 = extra.GetLR()
 
 			# 绘制法线
 			if self.conf.get('showCTan'):
 				color = (0, 0, 0)
 				cv2.line(self.img, (lx0, ly0), (rx0, ry0), color)
 
-			if currIndex >= 3:
+			if currIndex >= 4:
 				lx1, ly1, rx1, ry1 = mpLine.data[currIndex - 1][3].GetLR()
 				lx2, ly2, rx2, ry2 = mpLine.data[currIndex - 2][3].GetLR()
 				lx3, ly3, rx3, ry3 = mpLine.data[currIndex - 3][3].GetLR()
+				lx4, ly4, rx4, ry4 = mpLine.data[currIndex - 3][3].GetLR()
+
 
 			lastExtra = lastPt[3]
 			lx1, ly1 = lastExtra.data['lx'], lastExtra.data['ly']
