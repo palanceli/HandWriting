@@ -297,6 +297,7 @@ class samples(object):
 
 		xInterp = numpy.arange(1, 150, 1)
 		yInterp = funcInterp(xInterp)
+		logging.debug(yInterp)
 
 		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
 		ptsInterp = ptsInterp.reshape((-1, 1, 2))
@@ -324,76 +325,6 @@ class samples(object):
 
 		self.waitToClose(img)
 
-	def caseR04(self):
-		# 拟合曲线
-		img = numpy.zeros((350, 300, 3), numpy.uint8)
-		img[:, :] = (255, 255, 255)
-		pts = numpy.array([(240 , 200), (220, 320), (120, 200), (20, 320),(0, 160), (20, 0), (120, 120), (220, 0), (240, 120),], numpy.int32)
-		pts = pts.reshape((-1, 1, 2))
-
-		x = pts[:, 0][:, 0]
-		y = pts[:, 0][:, 1]
-
-		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
-		xInterp = numpy.linspace(0, 1, num=100, endpoint=True)
-		out = scipy.interpolate.splev(xInterp, tck)
-
-		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
-		ptsInterp = ptsInterp.reshape((-1, 1, 2))
-
-		ptsInterp[:, 0][:, 0] = out[0]
-		ptsInterp[:, 0][:, 1] = out[1]
-		cv2.polylines(img, numpy.int32([ptsInterp]), True, (255, 0, 0), 1)		# 多边形
-		cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 多边形
-
-		# logging.debug(numpy.int32(ptsInterp))
-
-		pts = numpy.array([(240 , 200), (220, 320), (120, 200), (20, 320), (0, 160),], numpy.int32)
-		pts = pts.reshape((-1, 1, 2))
-
-		x = pts[:, 0][:, 0]
-		y = pts[:, 0][:, 1]
-
-		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
-		xInterp = numpy.linspace(0, 1, num=100, endpoint=True)
-		out = scipy.interpolate.splev(xInterp, tck)
-
-		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
-		ptsInterp = ptsInterp.reshape((-1, 1, 2))
-
-		ptsInterp[:, 0][:, 0] = out[0]
-		ptsInterp[:, 0][:, 1] = out[1]
-		cv2.polylines(img, numpy.int32([ptsInterp]), False, (0, 255, 0), 1)		# 多边形
-		cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 多边形
-		self.waitToClose(img)
-
-	def caseR05(self):
-		# 拟合曲线
-		img = numpy.zeros((350, 300, 3), numpy.uint8)
-		img[:, :] = (255, 255, 255)
-		pts = numpy.array([(240 , 200), (220, 320), (120, 200), (121, 201),], numpy.int32)
-		pts = pts.reshape((-1, 1, 2))
-
-		x = pts[:, 0][:, 0]
-		y = pts[:, 0][:, 1]
-
-		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
-		xInterp = numpy.linspace(0, 1, num=10, endpoint=True)
-		out = scipy.interpolate.splev(xInterp, tck)
-
-		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
-		ptsInterp = ptsInterp.reshape((-1, 1, 2))
-
-		ptsInterp[:, 0][:, 0] = out[0]
-		ptsInterp[:, 0][:, 1] = out[1]
-		cv2.polylines(img, numpy.int32([ptsInterp]), False, (255, 0, 0), 1)		# 多边形
-		cv2.polylines(img, pts, True, (0, 0, 0), 2)		# 多边形
-		cv2.polylines(img, numpy.int32(ptsInterp), True, (0, 0, 255), 2)		# 多边形
-
-		logging.debug(pts)
-		logging.debug(numpy.int32(ptsInterp))
-		self.waitToClose(img)
-
 	def caseR06(self):
 		img = numpy.zeros((350, 300, 3), numpy.uint8)
 		img[:, :] = (255, 255, 255)
@@ -417,8 +348,42 @@ class samples(object):
 		logging.debug(numpy.int32(ptsInterp))
 		self.waitToClose(img)
 
+	def caseR06_1(self):
+		img = numpy.zeros((350, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([(240 , 200), (220, 320), (120, 200), (20, 320),], numpy.int32)
+		logging.debug(pts)
+		pts = pts.reshape((-1, 1, 2))
+		logging.debug(pts)
+
+		cv2.polylines(img, [pts], False, (255, 0, 0), 1)		# 多边形
+
+		self.waitToClose(img)
+
+	def caseR07(self):
+		logging.debug('生成[1, 8]的等差数列：')
+		x = numpy.linspace(1, 8, 8)
+		logging.debug(x)
+
+		logging.debug('reshape成2*4的矩阵：')
+		logging.debug(x.reshape((2, 4)))
+		
+		logging.debug('reshape成2*2*2的矩阵：')
+		logging.debug(x.reshape((2, 2, 2)))
+
+		logging.debug('reshape后的数组和原数组共享一段内存，如果原数组内容变化，变形后的一会变：')
+		y = x.reshape(2, 4)
+		y[1, 1] = 10
+		logging.debug(y)
+		logging.debug(x)
+
+		logging.debug('reshape的值为-1，会根据数组长度和剩余维度中推断出来：')
+		logging.debug(x.reshape(-1, 2, 2))
+
+
+
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.caseR06()
+    s.caseR07()

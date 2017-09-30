@@ -7,6 +7,8 @@ import numpy
 import cv2
 import math
 import sys
+import scipy
+import scipy.interpolate
 
 class MPLine(object):
 	# MPLine记录一条笔画，其中x y t是原始数据，由该类负责记录和保存，
@@ -15,6 +17,7 @@ class MPLine(object):
 		# 每个元素是一个[x, y, t, extra] = MPPoint
 		# x y t是基本值，extra是由笔迹效果根据基本值计算出来的
 		self.data = []
+		self.extra = None
 
 	def Add(self, x, y, t=None):
 		if t == None:
@@ -169,7 +172,7 @@ class MagicPen(object):
 		color = (0, 0, 0)
 		cv2.line(self.img, (x0, y0), (x1, y1), color)
 
-class MPBrushExtra(object):
+class MPBrushPointExtra(object):
 	# 附着在每个MPPoint 的extra数据
 	def __init__(self, lx, ly, rx, ry):
 		self.data = {'lx':int(lx), 'ly':int(ly), 'rx':int(rx), 'ry':int(ry)}
@@ -184,7 +187,7 @@ class MagicPenBrush(MagicPen):
 	def Begin(self, x, y):
 		MagicPen.Begin(self, x, y)
 
-	def createExtraData(self, line, isEnd=False):
+	def createPointExtraData(self, line, isEnd=False):
 		if line is None or len(line.data) < 2:
 			return
 
@@ -199,37 +202,60 @@ class MagicPenBrush(MagicPen):
 		ly1 = y1 + (x1 - x0) * wdconst
 		rx1 = x1 + (y1 - y0) * wdconst
 		ry1 = y1 + (x0 - x1) * wdconst
-		extraData = MPBrushExtra(lx1, ly1, rx1, ry1)
+		extraData = MPBrushPointExtra(lx1, ly1, rx1, ry1)
 		pt1[3] = extraData
 		return extraData
 
+	def createCubicInterp(self, x, y):
+		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
+		xInterp = numpy.linspace(0, 1, num=100, endpoint=True)
+		out = scipy.interpolate.splev(xInterp, tck)
+		xInterps = out[0]
+		yInterps = out[1]
+		return xInterps, yInterps
+
+	def createLineExtraData(self, line):
+		lxList = []
+		lyList = []
+		rxList = []
+		ryList = []
+		if line is None:
+			return None
+
+		for pt in line.data:
+			ptExtra = pt[3]
+			if ptExtra is None:
+				continue
+			lx, ly, rx, ry = ptExtra.GetLR()
+			lxList.append(lx)
+			lyList.append(ly)
+			rxList.append(rx)
+			ryList.append(ry)
+		if len(lxList) < 4 or len(rxList) < 4:
+			return None
+		# logging.debug(lxList)
+		# logging.debug(lyList)
+		lxInterps, lyInterps = self.createCubicInterp(lxList, lyList)
+		rxInterps, ryInterps = self.createCubicInterp(rxList, ryList)
+		
+		ptsInterp = numpy.zeros((len(lxInterps) + len(rxInterps), 2), numpy.float32)
+
+		ptsInterp[ : len(lxInterps), 0] = lxInterps
+		ptsInterp[ : len(lyInterps), 1] = lyInterps
+		ptsInterp[len(lxInterps) : , 0] = rxInterps
+		ptsInterp[len(lyInterps) : , 1] = ryInterps
+
+		line.extra = ptsInterp
+		return line.extra
+
 	def Continue(self, x, y):
 		lastLine = MagicPen.Continue(self, x, y)
-		extraData = self.createExtraData(lastLine, False)
+		pointExtraData = self.createPointExtraData(lastLine, False)
+		lineExtraData = self.createLineExtraData(lastLine)
 
 	def End(self, x, y):
 		lastLine = self.Continue(x, y)
-		self.createExtraData(lastLine, True)
-
-	def createCubic(self, x, y):		
-		funcInterp = scipy.interpolate.interp1d(x, y, 'cubic')			# 生成样条插值函数
-
-		xInterp = numpy.arange(1, 150, 1)
-		yInterp = funcInterp(xInterp)
-
-		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
-		ptsInterp = ptsInterp.reshape((-1, 1, 2))
-
-	def getBSPLine(self, xList, yList):
-		tck, u = scipy.interpolate.splprep([xList, yList], k=3, s=0)
-		xInterp = numpy.linspace(0, 1, num=100, endpoint=True)
-		out = scipy.interpolate.splev(xInterp, tck)
-
-		ptsInterp = numpy.zeros((len(xInterp), 2), numpy.float32)
-		ptsInterp = ptsInterp.reshape((-1, 1, 2))
-
-		ptsInterp[:, 0][:, 0] = out[0]
-		ptsInterp[:, 0][:, 1] = out[1]
+		self.createLineExtraData(lastLine)
 
 	def redrawSingleLine(self, mpLine, redrawAll=False):
 		MagicPen.redrawSingleLine(self, mpLine)
@@ -251,22 +277,11 @@ class MagicPenBrush(MagicPen):
 			if self.conf.get('showCTan'):
 				color = (0, 0, 0)
 				cv2.line(self.img, (lx0, ly0), (rx0, ry0), color)
-
-			if currIndex >= 4:
-				lx1, ly1, rx1, ry1 = mpLine.data[currIndex - 1][3].GetLR()
-				lx2, ly2, rx2, ry2 = mpLine.data[currIndex - 2][3].GetLR()
-				lx3, ly3, rx3, ry3 = mpLine.data[currIndex - 3][3].GetLR()
-				lx4, ly4, rx4, ry4 = mpLine.data[currIndex - 3][3].GetLR()
-
-
-			lastExtra = lastPt[3]
-			lx1, ly1 = lastExtra.data['lx'], lastExtra.data['ly']
-			rx1, ry1 = lastExtra.data['rx'], lastExtra.data['ry']
-			polyLine = [(lx0, ly0), (lx1, ly1)]
-			polyLine = [numpy.array(polyLine, numpy.int32).reshape((-1, 1, 2))]
-			color = (128, 128, 128)
-			cv2.polylines(self.img, polyLine, True, color, 1)
-
+		lineExtra = mpLine.extra
+		if lineExtra is not None:
+			# logging.debug(lineExtra)
+			cv2.polylines(self.img, numpy.int32([lineExtra]), False, (255, 0, 0), 1)		# 多边形
+		
 	def Redraw(self, redrawAll=False):
 		# 绘制每个点的法线段
 		color = (0, 0, 0)
@@ -287,7 +302,7 @@ class MagicPenBrush(MagicPen):
 					continue
 				x0, y0, t0 = lastPoint[0], lastPoint[1], lastPoint[2]
 				x1, y1, t1 = mpPoint[0], mpPoint[1], mpPoint[2]
-				extra = MPBrushExtra(x0, y0, t0, x1, y1, t1)
+				extra = MPBrushPointExtra(x0, y0, t0, x1, y1, t1)
 				lastPoint[3] = extra
 				lastPoint = mpPoint
 
