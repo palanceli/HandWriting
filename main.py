@@ -18,6 +18,7 @@ class MPLine(object):
 		# x y t是基本值，extra是由笔迹效果根据基本值计算出来的
 		self.data = []
 		self.extra = None
+		self.isEnd = False
 
 	def Add(self, x, y, t=None):
 		if t == None:
@@ -68,7 +69,9 @@ class MPTracker(object):
 		return lastLine
 
 	def AddEnd(self, x, y, t=None):
-		return self.AddContinue(x, y, t)
+		lastLine = self.AddContinue(x, y, t)
+		lastLine.isEnd = True
+		return lastLine
 
 	def Clean(self):
 		self.trackList = []
@@ -122,31 +125,6 @@ class MagicPen(object):
 		self.mpTracker.Clean()
 		self.img[:, :] = (255, 255, 255)
 
-	def redrawSingleLine(self, mpLine, redrawAll=False):
-		lastPoint = None
-		polyLine = []
-		dataLen = len(mpLine.data)
-		for point in mpLine.data:
-			# 只画最后几个点
-			if redrawAll == False and dataLen - mpLine.data.index(point) > 3:
-				continue
-			x, y, t = point[0], point[1], point[2]
-			self.drawX(x, y)
-			polyLine.append((x, y))
-
-			# 和前一个点连成线
-			if lastPoint == None:
-				lastPoint = point
-				continue
-			x0, y0, t0 = lastPoint[0], lastPoint[1], lastPoint[2]
-			self.drawOriginLine(x0, y0, x, y)
-			lastPoint = point
-
-		if self.conf.get('showPolyLine'):
-			polyLine = [numpy.array(polyLine, numpy.int32).reshape((-1, 1, 2))]
-			color = (128, 128, 128)
-			cv2.polylines(self.img, polyLine, False, color, 1, cv2.LINE_AA)
-
 	def Redraw(self, redrawAll=False):
 		return
 
@@ -156,21 +134,6 @@ class MagicPen(object):
 
 	def LoadTrack(self):
 		self.mpTracker.Load()
-
-	def drawX(self, x, y):
-		if not self.conf.get('showOrigin'):
-			return
-		color = (224, 224, 224)
-		x0, y0, x1, y1 = x - 1, y - 1, x + 1, y + 1
-		cv2.line(self.img, (x0, y0), (x1, y1), color, 1)
-		x0, y0, x1, y1 = x + 1, y - 1, x - 1, y + 1
-		cv2.line(self.img, (x0, y0), (x1, y1), color, 1)
-
-	def drawOriginLine(self, x0, y0, x1, y1):
-		if not self.conf.get('showOriginLine'):
-			return
-		color = (0, 0, 0)
-		cv2.line(self.img, (x0, y0), (x1, y1), color)
 
 class MPBrushPointExtra(object):
 	# 附着在每个MPPoint 的extra数据
@@ -183,6 +146,8 @@ class MPBrushPointExtra(object):
 class MagicPenBrush(MagicPen):
 	def __init__(self, img, imgName, conf):
 		MagicPen.__init__(self, img, imgName, conf)
+		# 已经抬笔的笔画保存到backImg，每次重绘时使用self.img = self.backImg + 尚未抬笔的笔画
+		self.backImg = self.img.copy()
 
 	def Begin(self, x, y):
 		MagicPen.Begin(self, x, y)
@@ -249,47 +214,75 @@ class MagicPenBrush(MagicPen):
 		return line.extra
 
 	def Continue(self, x, y):
-		lastLine = MagicPen.Continue(self, x, y)
-		pointExtraData = self.createPointExtraData(lastLine, False)
-		lineExtraData = self.createLineExtraData(lastLine)
+		lastLine = MagicPen.Continue(self, x, y) 	# 记录原始笔迹
+		pointExtraData = self.createPointExtraData(lastLine, False)	# 为每个笔记点生成左右点
+		# lineExtraData = self.createLineExtraData(lastLine)	# 插值
+		return lastLine
+
+	def drawMPLineToImg(self, mpLine, img):
+		if mpLine is None or mpLine.data is None or len(mpLine.data) == 0:
+			return
+		lightColor = (220, 220, 220)
+		polyPts = numpy.zeros((len(mpLine.data), 2), numpy.int32)
+		polyPts[:, 0] = [pt[0] for pt in mpLine.data]
+		polyPts[:, 1] = [pt[1] for pt in mpLine.data]
+		polyPts = polyPts.reshape(-1, 1, 2)
+		# logging.debug(polyPts)
+		cv2.polylines(img, polyPts, True, (0, 0, 0), 3) 		# 绘制原始点
+		cv2.polylines(img, [polyPts], False, lightColor, 1) 	# 绘制原始笔迹
+
+		lPts = []
+		rPts = []
+		# 绘制法线
+		for mpPoint in mpLine.data:
+			ptExtra = mpPoint[3]
+			if ptExtra == None:
+				continue
+
+			lx0, ly0, rx0, ry0 = ptExtra.GetLR()
+			# cv2.line(img, (lx0, ly0), (rx0, ry0), lightColor)
+			lPts.append((lx0, ly0))
+			rPts.append((rx0, ry0))
+
+		# 绘制左右边界
+		if len(lPts) > 2 and len(rPts) > 2:
+			lPts = numpy.array([lPts], numpy.int32).reshape(-1, 1, 2)
+			# logging.debug(lPts)
+			cv2.polylines(img, [lPts], False, lightColor, 1)
+
+			rPts = numpy.array([rPts], numpy.int32).reshape(-1, 1, 2)
+			cv2.polylines(img, [rPts], False, lightColor, 1)
+
+			# 封闭开头
+			firstPtExtra = mpLine.data[0][3]
+			lx, ly, rx, ry = firstPtExtra.GetLR()
+			cv2.line(img, (lx, ly), (rx, ry), lightColor, 1)
+
+			# 封闭结尾
+			last1Pt = mpLine.data[-1]
+			x, y = last1Pt[0], last1Pt[1]
+			last2Pt = mpLine.data[-2]
+			last2PtExtra = last2Pt[3]
+			lx, ly, rx, ry = last2PtExtra.GetLR()
+			cv2.line(img, (lx, ly), (x, y), lightColor, 1)
+			cv2.line(img, (rx, ry), (x, y), lightColor, 1)
 
 	def End(self, x, y):
 		lastLine = self.Continue(x, y)
-		self.createLineExtraData(lastLine)
+		# self.createLineExtraData(lastLine)
+		# 抬笔的时候把最后一笔画到backImg上
+		self.drawMPLineToImg(lastLine, self.backImg)
 
-	def redrawSingleLine(self, mpLine, redrawAll=False):
-		MagicPen.redrawSingleLine(self, mpLine)
-
-		dataLen = len(mpLine.data)
-		for mpPoint in mpLine.data:
-			# 只画最后几个点相关的数据
-			currIndex = mpLine.data.index(mpPoint)
-			if redrawAll == False and dataLen - currIndex > 4:
-				continue
-
-			extra = mpPoint[3]
-			if extra == None:
-				continue
-
-			lx0, ly0, rx0, ry0 = extra.GetLR()
-
-			# 绘制法线
-			if self.conf.get('showCTan'):
-				color = (0, 0, 0)
-				cv2.line(self.img, (lx0, ly0), (rx0, ry0), color)
-		lineExtra = mpLine.extra
-		if lineExtra is not None:
-			# logging.debug(lineExtra)
-			cv2.polylines(self.img, numpy.int32([lineExtra]), False, (255, 0, 0), 1)		# 多边形
-		
 	def Redraw(self, redrawAll=False):
-		# 绘制每个点的法线段
-		color = (0, 0, 0)
-		for mpLine in self.mpTracker.trackList:
-			if redrawAll:
-				self.redrawSingleLine(mpLine, True)
-			elif mpLine == self.mpTracker.trackList[-1]:
-				self.redrawSingleLine(mpLine, False)
+		numpy.copyto(self.img, self.backImg)
+		if self.mpTracker.trackList is None:
+			return
+		if len(self.mpTracker.trackList) == 0:
+			return
+
+		lastLine = self.mpTracker.trackList[-1]
+		if not lastLine.isEnd:	# 尚未抬笔的笔画，绘制到self.img上
+			self.drawMPLineToImg(lastLine, self.img)
 
 	def LoadTrack(self):
 		MagicPen.LoadTrack(self)

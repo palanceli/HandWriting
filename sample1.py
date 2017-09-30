@@ -34,6 +34,7 @@ class samples(object):
 
 		pts = numpy.array([[10, 5], [20, 30], [70, 20], [50, 10]], numpy.int32)
 		pts = pts.reshape((-1, 1, 2))
+		logging.debug(pts)
 		cv2.polylines(img, [pts], True, (255, 0, 0), 1)				# 多边形
 
 		font = cv2.FONT_HERSHEY_SIMPLEX								# 文字
