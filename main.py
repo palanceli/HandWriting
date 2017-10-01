@@ -148,6 +148,8 @@ class MagicPenBrush(MagicPen):
 		MagicPen.__init__(self, img, imgName, conf)
 		# 已经抬笔的笔画保存到backImg，每次重绘时使用self.img = self.backImg + 尚未抬笔的笔画
 		self.backImg = self.img.copy()
+		self.maskImg = numpy.zeros((self.backImg.shape[0] + 2, self.backImg.shape[1] + 2), numpy.uint8)
+		self.maskImg[:] = 0
 
 	def Begin(self, x, y):
 		MagicPen.Begin(self, x, y)
@@ -223,40 +225,40 @@ class MagicPenBrush(MagicPen):
 		if mpLine is None or mpLine.data is None or len(mpLine.data) == 0:
 			return
 		lightColor = (220, 220, 220)
+		blackColor = (0, 0, 0)
 		polyPts = numpy.zeros((len(mpLine.data), 2), numpy.int32)
 		polyPts[:, 0] = [pt[0] for pt in mpLine.data]
 		polyPts[:, 1] = [pt[1] for pt in mpLine.data]
 		polyPts = polyPts.reshape(-1, 1, 2)
 		# logging.debug(polyPts)
-		cv2.polylines(img, polyPts, True, (0, 0, 0), 3) 		# 绘制原始点
-		cv2.polylines(img, [polyPts], False, lightColor, 1) 	# 绘制原始笔迹
+		# cv2.polylines(img, polyPts, True, lightColor, 3) 		# 绘制原始点
+		# cv2.polylines(img, [polyPts], False, lightColor, 1) 	# 绘制原始笔迹
 
 		lPts = []
 		rPts = []
-		# 绘制法线
+		# 法线左右两点
 		for mpPoint in mpLine.data:
 			ptExtra = mpPoint[3]
 			if ptExtra == None:
 				continue
 
 			lx0, ly0, rx0, ry0 = ptExtra.GetLR()
-			# cv2.line(img, (lx0, ly0), (rx0, ry0), lightColor)
+			# cv2.line(img, (lx0, ly0), (rx0, ry0), lightColor)	# 绘制法线
 			lPts.append((lx0, ly0))
 			rPts.append((rx0, ry0))
 
-		# 绘制左右边界
 		if len(lPts) > 2 and len(rPts) > 2:
+			# 绘制左右边界
 			lPts = numpy.array([lPts], numpy.int32).reshape(-1, 1, 2)
-			# logging.debug(lPts)
-			cv2.polylines(img, [lPts], False, lightColor, 1)
+			cv2.polylines(img, [lPts], False, blackColor, 1) 	# 绘制左边界
 
 			rPts = numpy.array([rPts], numpy.int32).reshape(-1, 1, 2)
-			cv2.polylines(img, [rPts], False, lightColor, 1)
+			cv2.polylines(img, [rPts], False, blackColor, 1)	# 绘制右边界
 
 			# 封闭开头
 			firstPtExtra = mpLine.data[0][3]
 			lx, ly, rx, ry = firstPtExtra.GetLR()
-			cv2.line(img, (lx, ly), (rx, ry), lightColor, 1)
+			cv2.line(img, (lx, ly), (rx, ry), blackColor, 1)
 
 			# 封闭结尾
 			last1Pt = mpLine.data[-1]
@@ -264,8 +266,20 @@ class MagicPenBrush(MagicPen):
 			last2Pt = mpLine.data[-2]
 			last2PtExtra = last2Pt[3]
 			lx, ly, rx, ry = last2PtExtra.GetLR()
-			cv2.line(img, (lx, ly), (x, y), lightColor, 1)
-			cv2.line(img, (rx, ry), (x, y), lightColor, 1)
+			cv2.line(img, (lx, ly), (x, y), blackColor, 1)
+			cv2.line(img, (rx, ry), (x, y), blackColor, 1)
+
+			# 填充
+			self.maskImg[:] = 0
+			seedPt = (mpLine.data[1][0], mpLine.data[1][1])
+			newVal = (0, 0, 0)
+			loDiff = (0, )
+			hiDiff = (0, )
+			cv2.floodFill(img, self.maskImg, seedPt, newVal, loDiff, hiDiff, 8)
+			logging.debug(lPts)
+			logging.debug(rPts)
+			logging.debug(polyPts)
+			logging.debug(seedPt)
 
 	def End(self, x, y):
 		lastLine = self.Continue(x, y)
