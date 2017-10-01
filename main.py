@@ -50,13 +50,13 @@ class MPTracker(object):
 		self.trackList = []
 		self.filePath = 'originTracker.data'
 
-	def AddBegin(self, x, y, t=None):
+	def AddBegin(self, x, y, t):
 		newLine = MPLine()
 		newLine.Add(x, y, t)
 		self.trackList.append(newLine)
 		return newLine
 
-	def AddContinue(self, x, y, t=None):
+	def AddContinue(self, x, y, t):
 		if len(self.trackList) == 0:
 			return self.AddBegin(x, y, t)
 		lastLine = self.trackList[-1]
@@ -68,7 +68,7 @@ class MPTracker(object):
 		lastLine.Add(x, y, t)
 		return lastLine
 
-	def AddEnd(self, x, y, t=None):
+	def AddEnd(self, x, y, t):
 		lastLine = self.AddContinue(x, y, t)
 		lastLine.isEnd = True
 		return lastLine
@@ -112,14 +112,14 @@ class MagicPen(object):
 		self.conf = conf
 
 	# {{ Begin、Continue、End 负责记录原始笔迹 }}
-	def Begin(self, x, y):
-		return self.mpTracker.AddBegin(x, y)
+	def Begin(self, x, y, t = None):
+		return self.mpTracker.AddBegin(x, y, t)
 
-	def Continue(self, x, y):
-		return self.mpTracker.AddContinue(x, y)
+	def Continue(self, x, y, t=None):
+		return self.mpTracker.AddContinue(x, y, t)
 
-	def End(self, x, y):
-		return self.mpTracker.AddEnd(x, y)
+	def End(self, x, y, t=None):
+		return self.mpTracker.AddEnd(x, y, t)
 
 	def Clean(self):
 		self.mpTracker.Clean()
@@ -133,15 +133,20 @@ class MagicPen(object):
 		self.mpTracker.Save()
 
 	def LoadTrack(self):
-		self.mpTracker.Load()
+		mpTracker = MPTracker()
+		mpTracker.Load()
+		return mpTracker
 
 class MPBrushPointExtra(object):
 	# 附着在每个MPPoint 的extra数据
-	def __init__(self, lx, ly, rx, ry):
-		self.data = {'lx':int(lx), 'ly':int(ly), 'rx':int(rx), 'ry':int(ry)}
+	def __init__(self, lx, ly, rx, ry, width):
+		self.data = {'lx':int(lx), 'ly':int(ly), 'rx':int(rx), 'ry':int(ry), 'width':width}
 
 	def GetLR(self):
 		return self.data['lx'], self.data['ly'], self.data['rx'], self.data['ry'], 
+
+	def GetWidth(self):
+		return self.data['width']
 
 class MagicPenBrush(MagicPen):
 	def __init__(self, img, imgName, conf):
@@ -155,8 +160,8 @@ class MagicPenBrush(MagicPen):
 		MagicPen.Clean(self)
 		self.backImg[:, :] = (255, 255, 255)
 
-	def Begin(self, x, y):
-		MagicPen.Begin(self, x, y)
+	def Begin(self, x, y, t=None):
+		MagicPen.Begin(self, x, y, t)
 
 	def createPointExtraData(self, line, isEnd=False):
 		if line is None or len(line.data) < 2:
@@ -174,17 +179,19 @@ class MagicPenBrush(MagicPen):
 		minWidth = 2
 		avgVSpeed = 0.1
 		width = (1 - VSpeed / (2 * avgVSpeed)) * avgWidth
+		logging.debug('%12d    %4.1f    %4.4f    %2.1f' % (t0-t1, distance, VSpeed, width))
+		# logging.debug(width)
 		if width > 15:
 			width = 15
 		if width < 2:
 			width = 2
-		logging.debug(width)
+		# logging.debug(width)
 		wdconst = width / distance
 		lx1 = x1 + (y0 - y1) * wdconst
 		ly1 = y1 + (x1 - x0) * wdconst
 		rx1 = x1 + (y1 - y0) * wdconst
 		ry1 = y1 + (x0 - x1) * wdconst
-		extraData = MPBrushPointExtra(lx1, ly1, rx1, ry1)
+		extraData = MPBrushPointExtra(lx1, ly1, rx1, ry1, width)
 		pt1[3] = extraData
 		return extraData
 
@@ -230,8 +237,8 @@ class MagicPenBrush(MagicPen):
 		line.extra = ptsInterp
 		return line.extra
 
-	def Continue(self, x, y):
-		lastLine = MagicPen.Continue(self, x, y) 	# 记录原始笔迹
+	def Continue(self, x, y, t=None):
+		lastLine = MagicPen.Continue(self, x, y, t) 	# 记录原始笔迹
 		pointExtraData = self.createPointExtraData(lastLine, False)	# 为每个笔记点生成左右点
 		# lineExtraData = self.createLineExtraData(lastLine)	# 插值
 		return lastLine
@@ -275,11 +282,12 @@ class MagicPenBrush(MagicPen):
 			cv2.polylines(img, [borderPts], True, fillColor, 1, cv2.LINE_AA)
 			cv2.fillPoly(img, [borderPts], fillColor)
 
-	def End(self, x, y):
-		lastLine = self.Continue(x, y)
+	def End(self, x, y, t=None):
+		lastLine = self.Continue(x, y, t)
 		# self.createLineExtraData(lastLine)
 		# 抬笔的时候把最后一笔画到backImg上
 		self.drawMPLineToImg(lastLine, self.backImg)
+		logging.debug('抬笔')
 
 	def Redraw(self):
 		numpy.copyto(self.img, self.backImg)
@@ -291,21 +299,20 @@ class MagicPenBrush(MagicPen):
 		lastLine = self.mpTracker.trackList[-1]
 		if not lastLine.isEnd:	# 尚未抬笔的笔画，绘制到self.img上
 			self.drawMPLineToImg(lastLine, self.img)
+		logging.debug('redraw...')
 
 	def LoadTrack(self):
-		MagicPen.LoadTrack(self)
+		mpTracker = MagicPen.LoadTrack(self)
 		# load extra 
-		for mpLine in self.mpTracker.trackList:
-			lastPoint = None
+		for mpLine in mpTracker.trackList:
 			for mpPoint in mpLine.data:
-				if lastPoint == None:
-					lastPoint = mpPoint
-					continue
-				x0, y0, t0 = lastPoint[0], lastPoint[1], lastPoint[2]
-				x1, y1, t1 = mpPoint[0], mpPoint[1], mpPoint[2]
-				extra = MPBrushPointExtra(x0, y0, t0, x1, y1, t1)
-				lastPoint[3] = extra
-				lastPoint = mpPoint
+				x, y, t = mpPoint[0], mpPoint[1], mpPoint[2]
+				if mpLine.data.index(mpPoint) == 0:
+					self.Begin(x, y, t)
+				elif mpLine.data.index(mpPoint) == len(mpLine.data) - 1:
+					self.End(x, y, t)
+				else:
+					self.Continue(x, y, t)
 
 class MagicPenApp(object):
 	def __init__(self):
