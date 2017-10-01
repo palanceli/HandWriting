@@ -125,7 +125,7 @@ class MagicPen(object):
 		self.mpTracker.Clean()
 		self.img[:, :] = (255, 255, 255)
 
-	def Redraw(self, redrawAll=False):
+	def Redraw(self):
 		return
 
 	# SaveTrack、LoadTrack 保存和加载原始笔迹
@@ -151,6 +151,10 @@ class MagicPenBrush(MagicPen):
 		self.maskImg = numpy.zeros((self.backImg.shape[0] + 2, self.backImg.shape[1] + 2), numpy.uint8)
 		self.maskImg[:] = 0
 
+	def Clean(self):
+		MagicPen.Clean(self)
+		self.backImg[:, :] = (255, 255, 255)
+
 	def Begin(self, x, y):
 		MagicPen.Begin(self, x, y)
 
@@ -162,8 +166,19 @@ class MagicPenBrush(MagicPen):
 		x0, y0, t0 = pt0[0], pt0[1], pt0[2]
 		pt1 = line.data[-2]
 		x1, y1, t1 = pt1[0], pt1[1], pt1[2]
-		width = 10
+
 		distance = math.sqrt((y1 - y0)**2 + (x1 - x0)**2)
+		VSpeed = distance * 1000000 / (t0 - t1)
+
+		avgWidth = 10
+		minWidth = 2
+		avgVSpeed = 0.1
+		width = (1 - VSpeed / (2 * avgVSpeed)) * avgWidth
+		if width > 15:
+			width = 15
+		if width < 2:
+			width = 2
+		logging.debug(width)
 		wdconst = width / distance
 		lx1 = x1 + (y0 - y1) * wdconst
 		ly1 = y1 + (x1 - x0) * wdconst
@@ -226,12 +241,13 @@ class MagicPenBrush(MagicPen):
 			return
 		lightColor = (220, 220, 220)
 		blackColor = (0, 0, 0)
+		fillColor = (100, 100, 100)
 		polyPts = numpy.zeros((len(mpLine.data), 2), numpy.int32)
 		polyPts[:, 0] = [pt[0] for pt in mpLine.data]
 		polyPts[:, 1] = [pt[1] for pt in mpLine.data]
 		polyPts = polyPts.reshape(-1, 1, 2)
 		# logging.debug(polyPts)
-		# cv2.polylines(img, polyPts, True, lightColor, 3) 		# 绘制原始点
+		# cv2.polylines(img, polyPts, True, blackColor, 3) 		# 绘制原始点
 		# cv2.polylines(img, [polyPts], False, lightColor, 1) 	# 绘制原始笔迹
 
 		lPts = []
@@ -243,43 +259,21 @@ class MagicPenBrush(MagicPen):
 				continue
 
 			lx0, ly0, rx0, ry0 = ptExtra.GetLR()
-			# cv2.line(img, (lx0, ly0), (rx0, ry0), lightColor)	# 绘制法线
+			# cv2.line(img, (lx0, ly0), (rx0, ry0), blackColor)	# 绘制法线
 			lPts.append((lx0, ly0))
 			rPts.append((rx0, ry0))
 
 		if len(lPts) > 2 and len(rPts) > 2:
-			# 绘制左右边界
-			lPts = numpy.array([lPts], numpy.int32).reshape(-1, 1, 2)
-			cv2.polylines(img, [lPts], False, blackColor, 1) 	# 绘制左边界
-
-			rPts = numpy.array([rPts], numpy.int32).reshape(-1, 1, 2)
-			cv2.polylines(img, [rPts], False, blackColor, 1)	# 绘制右边界
-
-			# 封闭开头
-			firstPtExtra = mpLine.data[0][3]
-			lx, ly, rx, ry = firstPtExtra.GetLR()
-			cv2.line(img, (lx, ly), (rx, ry), blackColor, 1)
-
-			# 封闭结尾
+			# 填充
 			last1Pt = mpLine.data[-1]
 			x, y = last1Pt[0], last1Pt[1]
-			last2Pt = mpLine.data[-2]
-			last2PtExtra = last2Pt[3]
-			lx, ly, rx, ry = last2PtExtra.GetLR()
-			cv2.line(img, (lx, ly), (x, y), blackColor, 1)
-			cv2.line(img, (rx, ry), (x, y), blackColor, 1)
 
-			# 填充
-			self.maskImg[:] = 0
-			seedPt = (mpLine.data[1][0], mpLine.data[1][1])
-			newVal = (0, 0, 0)
-			loDiff = (0, )
-			hiDiff = (0, )
-			cv2.floodFill(img, self.maskImg, seedPt, newVal, loDiff, hiDiff, 8)
-			logging.debug(lPts)
-			logging.debug(rPts)
-			logging.debug(polyPts)
-			logging.debug(seedPt)
+			borderPts = lPts
+			borderPts.append((x, y))
+			borderPts.extend(rPts[::-1])
+			borderPts = numpy.array([borderPts], numpy.int32).reshape(-1, 1, 2)
+			cv2.polylines(img, [borderPts], True, fillColor, 1, cv2.LINE_AA)
+			cv2.fillPoly(img, [borderPts], fillColor)
 
 	def End(self, x, y):
 		lastLine = self.Continue(x, y)
@@ -287,7 +281,7 @@ class MagicPenBrush(MagicPen):
 		# 抬笔的时候把最后一笔画到backImg上
 		self.drawMPLineToImg(lastLine, self.backImg)
 
-	def Redraw(self, redrawAll=False):
+	def Redraw(self):
 		numpy.copyto(self.img, self.backImg)
 		if self.mpTracker.trackList is None:
 			return
@@ -335,13 +329,13 @@ class MagicPenApp(object):
 			app = param
 			if event == cv2.EVENT_LBUTTONDOWN:
 				app.pen.Begin(x, y)
-				app.pen.Redraw(False)
+				app.pen.Redraw()
 			elif event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
 				app.pen.Continue(x, y)
-				app.pen.Redraw(False)
+				app.pen.Redraw()
 			elif event == cv2.EVENT_LBUTTONUP:
 				app.pen.End(x, y)
-				app.pen.Redraw(False)
+				app.pen.Redraw()
 
 		cv2.setMouseCallback(self.imgName, mouseCallback, self)
 
@@ -401,7 +395,7 @@ class MagicPenApp(object):
 
 			if needRedraw:
 				self.pen.Clean()
-				self.pen.Redraw(True)
+				self.pen.Redraw()
 
 		cv2.destroyAllWindows()
 

@@ -24,24 +24,6 @@ class samples(object):
 	    img = cv2.imread('sample01.jpg', 0)
 	    self.waitToClose(img)
 
-	def case0601(self):
-		# 各种几何图形
-		img = numpy.zeros((512, 512, 3), numpy.uint8)
-		cv2.line(img, (0, 0), (511, 511), (255, 0, 0), 2)			# 直线
-		cv2.rectangle(img, (384, 0), (510, 128), (0, 255, 0), 2)	# 矩形
-		cv2.circle(img, (447, 63), 63, (0, 0, 255), -1)				# 圆
-		cv2.ellipse(img, (256, 256), (100, 50), 0, 0, 180, 255, -1)	# 椭圆
-
-		pts = numpy.array([[10, 5], [20, 30], [70, 20], [50, 10]], numpy.int32)
-		pts = pts.reshape((-1, 1, 2))
-		logging.debug(pts)
-		cv2.polylines(img, [pts], True, (255, 0, 0), 1)				# 多边形
-
-		font = cv2.FONT_HERSHEY_SIMPLEX								# 文字
-		cv2.putText(img, 'OpenCV', (10, 500), font, 4, (255, 255, 255), 2)
-
-		self.waitToClose(img)
-
 	def case0701(self):
 		# 在鼠标双击的地方绘制圆圈
 		events = [i for i in dir(cv2) if 'EVENT' in i]
@@ -384,21 +366,26 @@ class samples(object):
 	def caseR08(self):
 		img = numpy.zeros((500, 899, 3), numpy.uint8)
 		img[:, :] = (255, 255, 255)
-		lPts = numpy.array([[454, 283], [471, 288], [486, 294], [553, 320]], numpy.int32)
-		rPts = numpy.array([[449, 302], [464, 307], [479, 313], [548, 339]], numpy.int32)
-		seedPt = (468, 298)
-		cv2.polylines(img, [lPts.reshape(-1, 1, 2)], False, (0, 0, 0), 1)		# 多边形
-		cv2.polylines(img, [rPts.reshape(-1, 1, 2)], False, (0, 0, 0), 1)		# 多边形
-		cv2.line(img, (454, 283), (449, 302), (0, 0, 0), 1)
-		cv2.line(img, (553, 320), (548, 339), (0, 0, 0), 1)
-		cv2.circle(img, seedPt, 1, (0, 0, 0), -1)				# 圆
+		# lPts = numpy.array([[454, 283], [471, 288], [486, 294], [553, 320]], numpy.int32)
+		# rPts = numpy.array([[449, 302], [464, 307], [479, 313], [548, 339]], numpy.int32)
+		# cv2.polylines(img, [lPts.reshape(-1, 1, 2)], False, (0, 0, 0), 1)
+		# cv2.polylines(img, [rPts.reshape(-1, 1, 2)], False, (0, 0, 0), 1)
+		# cv2.line(img, (454, 283), (449, 302), (0, 0, 0), 1)
+		# cv2.line(img, (553, 320), (548, 339), (0, 0, 0), 1)
 
+		pts = numpy.array([[454, 283], [471, 288], [486, 294], [553, 320], 
+			[548, 339], [479, 313], [464, 307], [449, 302]], numpy.int32)
+		cv2.polylines(img, [pts.reshape(-1, 1, 2)], True, (0, 0, 0), 1, cv2.LINE_AA)
+		# cv2.fillPoly(img, [pts.reshape(-1, 1, 2)], (0, 0, 0))
+	
+
+		seedPt = (468, 298)
 		maskImg = numpy.zeros((img.shape[0] + 2, img.shape[1] + 2), numpy.uint8)
-		maskImg[:] = 0
 		newVal = (0, 0, 0)
 		loDiff = (0, )
 		hiDiff = (0, )
-		# cv2.floodFill(img, maskImg, seedPt, newVal, loDiff, hiDiff, 8)
+		cv2.floodFill(img, maskImg, seedPt, newVal, loDiff, hiDiff, 8)
+		cv2.circle(img, seedPt, 1, (0, 0, 255), -1)				# 圆
 
 		self.waitToClose(img)
 

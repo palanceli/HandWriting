@@ -19,28 +19,103 @@ class samples(object):
 		
 		cv2.destroyAllWindows()
 
+	def case01(self):
+		img = numpy.zeros((300, 400, 3), numpy.uint8)
+		cv2.line(img, (384, 0), (510, 128), (255, 0, 0), 2)		# 直线
+
+		self.waitToClose(img)
+
+	def case02(self):
+		img = numpy.zeros((300, 400, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		cv2.rectangle(img, (10, 10), (100, 100), (0, 0, 0), 1)	# 绘制矩形
+
+		self.waitToClose(img)
+
+	def case03(self):
+		img = numpy.zeros((300, 400, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+
+		pts = numpy.array([[10, 10], [100, 10], [100, 100], [10, 100]], numpy.int32)
+		cv2.polylines(img, [pts.reshape(-1, 1, 2)], True, (0, 0, 0), -1)
+
+		pts[:, 0] = pts[:, 0] + 100
+		cv2.polylines(img, [pts.reshape(-1, 1, 2)], False, (0, 0, 0), 1)
+
+		pts[:, 1] = pts[:, 1] + 100
+		cv2.polylines(img, pts.reshape(-1, 1, 2), True, (0, 0, 0), 2)
+
+		self.waitToClose(img)
+
+	def case04(self):
+		img = numpy.zeros((300, 400, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+
+		pts = numpy.array([[10, 10], [100, 10], [100, 100], [10, 100]], numpy.int32)
+		cv2.polylines(img, [pts.reshape(-1, 1, 2)], True, (0, 0, 0), 1)
+
+		pts[:, 0] = pts[:, 0] + 100
+		cv2.polylines(img, [pts.reshape(-1, 1, 2)], False, (0, 0, 0), 1)
+
+		pts[:, 1] = pts[:, 1] + 100
+		cv2.polylines(img, pts.reshape(-1, 1, 2), True, (0, 0, 0), 2)
+
+		self.waitToClose(img)
+
+	def case05(self):
+		img = numpy.zeros((300, 400, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		cv2.circle(img, (50, 50), 20, (0, 0, 0), -1)
+		cv2.circle(img, (100, 100), 20, (0, 0, 0), 2)
+		self.waitToClose(img)
+
+	def case06(self):
+		img = numpy.zeros((300, 400, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		cv2.ellipse(img, (200, 50), (100, 50), 0, 0, 180, (0, 0, 0), 1)
+		cv2.ellipse(img, (200, 250), (100, 50), 90, 120, 180, (0, 0, 0), -1)
+		self.waitToClose(img)
+
+	def case07(self):
+		img = numpy.zeros((300, 400, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		font = cv2.FONT_HERSHEY_SIMPLEX								# 文字
+		cv2.putText(img, 'OpenCV', (10, 100), font, 2, (0, 0, 0), 2, cv2.LINE_AA)
+		cv2.putText(img, 'OpenCV', (10, 200), font, 1, (0, 0, 0), 1, cv2.LINE_AA)
+		self.waitToClose(img)
+
+	def case08(self):
+		# 填充封闭图形
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([[10, 10], [100, 10], [100, 100], [10, 100]], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
+		cv2.polylines(img, [pts], True, (0, 0, 0), 1)
+		cv2.polylines(img, pts, True, (0, 0, 255), 3)
+
+		mask = numpy.zeros((302, 302), numpy.uint8)
+
+		cv2.floodFill(img, mask, (50, 50), (0, 0, 0), (0,), (0,), 8)
+		cv2.circle(img, (50, 50), 3, (255, 0, 0), -1)
+
+		self.waitToClose(img)
+
+	def case08a(self):
+		# 填充poly
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([[10, 10], [100, 10], [100, 100], [10, 100]], numpy.int32)
+		pts = pts.reshape((-1, 1, 2))
+		cv2.polylines(img, [pts], True, (0, 0, 0), 1)
+		cv2.polylines(img, pts, True, (0, 0, 255), 3)
+		cv2.fillPoly(img, [pts], (0, 0, 0))		# 填充封闭多边形
+
+		self.waitToClose(img)
+
 	def case0101(self):
 		# 读入一张图片
 	    img = cv2.imread('sample01.jpg', 0)
 	    self.waitToClose(img)
-
-	def case0601(self):
-		# 各种几何图形
-		img = numpy.zeros((512, 512, 3), numpy.uint8)
-		cv2.line(img, (0, 0), (511, 511), (255, 0, 0), 2)			# 直线
-		cv2.rectangle(img, (384, 0), (510, 128), (0, 255, 0), 2)	# 矩形
-		cv2.circle(img, (447, 63), 63, (0, 0, 255), -1)				# 圆
-		cv2.ellipse(img, (256, 256), (100, 50), 0, 0, 180, 255, -1)	# 椭圆
-
-		pts = numpy.array([[10, 5], [20, 30], [70, 20], [50, 10]], numpy.int32)
-		pts = pts.reshape((-1, 1, 2))
-		logging.debug(pts)
-		cv2.polylines(img, [pts], True, (255, 0, 0), 1)				# 多边形
-
-		font = cv2.FONT_HERSHEY_SIMPLEX								# 文字
-		cv2.putText(img, 'OpenCV', (10, 500), font, 4, (255, 255, 255), 2)
-
-		self.waitToClose(img)
 
 	def case0701(self):
 		# 在鼠标双击的地方绘制圆圈
@@ -407,4 +482,4 @@ if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.caseR08()
+    s.case08a()
