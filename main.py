@@ -293,13 +293,13 @@ class MagicPenBrush(MagicPen):
 		numpy.copyto(self.img, self.backImg)
 		if self.mpTracker.trackList is None:
 			return
+
 		if len(self.mpTracker.trackList) == 0:
 			return
 
 		lastLine = self.mpTracker.trackList[-1]
 		if not lastLine.isEnd:	# 尚未抬笔的笔画，绘制到self.img上
 			self.drawMPLineToImg(lastLine, self.img)
-		logging.debug('redraw...')
 
 	def LoadTrack(self):
 		mpTracker = MagicPen.LoadTrack(self)
@@ -401,7 +401,6 @@ class MagicPenApp(object):
 				needRedraw = True
 
 			if needRedraw:
-				self.pen.Clean()
 				self.pen.Redraw()
 
 		cv2.destroyAllWindows()
