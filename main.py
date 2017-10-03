@@ -148,21 +148,19 @@ class MPBrushPointExtra(object):
 	def GetWidth(self):
 		return self.data['width']
 
-class LineWidth(object):
-	@staticmetod
-	def GetLinear(self, vspeed):
+class LineWidthMgr(object):
+	def GetWidth(self, vspeed):
+		return 10
+
+class LinearWidthMgr(LineWidthMgr):
+	def GetWidth(self, vspeed):
 		# 使用一次线性函数计算线宽
-		avgWidth = 10
-		minWidth = 2
-		avgVSpeed = 0.1
-		width = (1 - VSpeed / (2 * avgVSpeed)) * avgWidth
-		logging.debug('%12d    %4.1f    %4.4f    %2.1f' % (t0-t1, distance, VSpeed, width))
-		# logging.debug(width)
-		if width > 15:
-			width = 15
-		if width < 2:
-			width = 2
-		return width
+		maxWidth = 15
+		minWidth = 5
+		v1 = 4
+		if vspeed > 4:
+			return minWidth
+		return (15 - (maxWidth - minWidth) * vspeed / v1)
 
 class MagicPenBrush(MagicPen):
 	def __init__(self, img, imgName, conf):
@@ -171,6 +169,7 @@ class MagicPenBrush(MagicPen):
 		self.backImg = self.img.copy()
 		self.maskImg = numpy.zeros((self.backImg.shape[0] + 2, self.backImg.shape[1] + 2), numpy.uint8)
 		self.maskImg[:] = 0
+		self.widthMgr = LinearWidthMgr()
 
 	def Clean(self):
 		MagicPen.Clean(self)
@@ -188,9 +187,24 @@ class MagicPenBrush(MagicPen):
 		pt1 = line.data[-2]
 		x1, y1, t1 = pt1[0], pt1[1], pt1[2]
 
+		# width2 = 0
+		# if len(line.data) == 2:
+		# 	width2 = pt1[3].GetWidth()
+		# else:
+		# 	pt2 = line.data[-3]
+		# 	width2 = pt2[3].GetWidth()
+
 		distance = math.sqrt((y1 - y0)**2 + (x1 - x0)**2)
 		VSpeed = distance * 1000000 / (t0 - t1)
-		width = LineWidth.GetLinear(VSpeed)
+		width = self.widthMgr.GetWidth(VSpeed)
+		# if len(line.data) > 2:
+		# 	pt2 = line.data[-3]
+		# 	width2 = pt2[3].GetWidth()
+		# 	if abs(width - width2) / (2 * distance) > (1.732 / 3):
+		# 		width = width2 + 2 * distance / 1.732
+		# 	logging.debug(abs(width - width2) / distance)
+
+		logging.debug('%12d    %4.1f    %4.4f    %2.1f' % (t0-t1, distance, VSpeed, width))
 		wdconst = width / distance
 		lx1 = x1 + (y0 - y1) * wdconst
 		ly1 = y1 + (x1 - x0) * wdconst
@@ -208,7 +222,7 @@ class MagicPenBrush(MagicPen):
 		yInterps = out[1]
 		return xInterps, yInterps
 
-	def createLineExtraData(self, line):
+	def createOutline(self, line):
 		lxList = []
 		lyList = []
 		rxList = []
@@ -229,63 +243,77 @@ class MagicPenBrush(MagicPen):
 			return None
 		# logging.debug(lxList)
 		# logging.debug(lyList)
-		lxInterps, lyInterps = self.createCubicInterp(lxList, lyList)
-		rxInterps, ryInterps = self.createCubicInterp(rxList, ryList)
+		lxInterps, lyInterps = self.createCubicInterp(lxList, lyList) 	# 左边界插值
+		rxInterps, ryInterps = self.createCubicInterp(rxList, ryList)	# 右边界插值
 		
-		ptsInterp = numpy.zeros((len(lxInterps) + len(rxInterps), 2), numpy.float32)
+		# 生成封闭轮廓
+		outline = numpy.zeros((len(lxInterps) + len(rxInterps) + 1, 2), numpy.float32)
 
-		ptsInterp[ : len(lxInterps), 0] = lxInterps
-		ptsInterp[ : len(lyInterps), 1] = lyInterps
-		ptsInterp[len(lxInterps) : , 0] = rxInterps
-		ptsInterp[len(lyInterps) : , 1] = ryInterps
+		outline[ : len(lxInterps), 0] = lxInterps
+		outline[ : len(lyInterps), 1] = lyInterps
+		outline[len(lxInterps), 0] = line.data[-1][0]
+		outline[len(lyInterps), 1] = line.data[-1][1]
+		outline[len(lxInterps) + 1 : , 0] = rxInterps[::-1]
+		outline[len(lyInterps) + 1 : , 1] = ryInterps[::-1]
 
-		line.extra = ptsInterp
+		line.extra = outline
 		return line.extra
 
 	def Continue(self, x, y, t=None):
 		lastLine = MagicPen.Continue(self, x, y, t) 	# 记录原始笔迹
 		pointExtraData = self.createPointExtraData(lastLine, False)	# 为每个笔记点生成左右点
-		# lineExtraData = self.createLineExtraData(lastLine)	# 插值
+		lineExtraData = self.createOutline(lastLine)	# 插值
 		return lastLine
 
 	def drawMPLineToImg(self, mpLine, img):
-		if mpLine is None or mpLine.data is None or len(mpLine.data) == 0:
+		if mpLine is None or mpLine.data is None:
 			return
+		if  len(mpLine.data) == 0:
+			return
+		if  mpLine.extra is None:
+			return
+
 		lightColor = (220, 220, 220)
 		blackColor = (0, 0, 0)
 		fillColor = (100, 100, 100)
-		polyPts = numpy.zeros((len(mpLine.data), 2), numpy.int32)
-		polyPts[:, 0] = [pt[0] for pt in mpLine.data]
-		polyPts[:, 1] = [pt[1] for pt in mpLine.data]
-		polyPts = polyPts.reshape(-1, 1, 2)
-		# logging.debug(polyPts)
-		# cv2.polylines(img, polyPts, True, blackColor, 3) 		# 绘制原始点
-		# cv2.polylines(img, [polyPts], False, lightColor, 1) 	# 绘制原始笔迹
+		outlinePts = numpy.int32(mpLine.extra)
+		# logging.debug(outlinePts)
+		cv2.polylines(img, [outlinePts], True, fillColor, 1, cv2.LINE_AA)
+		cv2.fillPoly(img, [outlinePts], fillColor)
+		# cv2.fillConvexPoly(img, outlinePts, fillColor)
+		return
+		# polyPts = numpy.zeros((len(mpLine.data), 2), numpy.int32)
+		# polyPts[:, 0] = [pt[0] for pt in mpLine.data]
+		# polyPts[:, 1] = [pt[1] for pt in mpLine.data]
+		# polyPts = polyPts.reshape(-1, 1, 2)
+		# # logging.debug(polyPts)
+		# # cv2.polylines(img, polyPts, True, blackColor, 3) 		# 绘制原始点
+		# # cv2.polylines(img, [polyPts], False, lightColor, 1) 	# 绘制原始笔迹
 
-		lPts = []
-		rPts = []
-		# 法线左右两点
-		for mpPoint in mpLine.data:
-			ptExtra = mpPoint[3]
-			if ptExtra == None:
-				continue
+		# lPts = []
+		# rPts = []
+		# # 法线左右两点
+		# for mpPoint in mpLine.data:
+		# 	ptExtra = mpPoint[3]
+		# 	if ptExtra == None:
+		# 		continue
 
-			lx0, ly0, rx0, ry0 = ptExtra.GetLR()
-			# cv2.line(img, (lx0, ly0), (rx0, ry0), blackColor)	# 绘制法线
-			lPts.append((lx0, ly0))
-			rPts.append((rx0, ry0))
+		# 	lx0, ly0, rx0, ry0 = ptExtra.GetLR()
+		# 	# cv2.line(img, (lx0, ly0), (rx0, ry0), blackColor)	# 绘制法线
+		# 	lPts.append((lx0, ly0))
+		# 	rPts.append((rx0, ry0))
 
-		if len(lPts) > 2 and len(rPts) > 2:
-			# 填充
-			last1Pt = mpLine.data[-1]
-			x, y = last1Pt[0], last1Pt[1]
+		# if len(lPts) > 2 and len(rPts) > 2:
+		# 	# 填充
+		# 	last1Pt = mpLine.data[-1]
+		# 	x, y = last1Pt[0], last1Pt[1]
 
-			borderPts = lPts
-			borderPts.append((x, y))
-			borderPts.extend(rPts[::-1])
-			borderPts = numpy.array([borderPts], numpy.int32).reshape(-1, 1, 2)
-			cv2.polylines(img, [borderPts], True, fillColor, 1, cv2.LINE_AA)
-			cv2.fillPoly(img, [borderPts], fillColor)
+		# 	borderPts = lPts
+		# 	borderPts.append((x, y))
+		# 	borderPts.extend(rPts[::-1])
+		# 	borderPts = numpy.array([borderPts], numpy.int32).reshape(-1, 1, 2)
+		# 	cv2.polylines(img, [borderPts], True, fillColor, 1, cv2.LINE_AA)
+		# 	cv2.fillPoly(img, [borderPts], fillColor)
 
 	def End(self, x, y, t=None):
 		lastLine = self.Continue(x, y, t)
@@ -350,6 +378,9 @@ class MagicPenApp(object):
 				app.pen.Redraw()
 
 		cv2.setMouseCallback(self.imgName, mouseCallback, self)
+
+		self.pen.LoadTrack()
+		self.pen.Redraw()
 
 		# 响应快捷键
 		while True:
