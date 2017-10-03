@@ -148,6 +148,22 @@ class MPBrushPointExtra(object):
 	def GetWidth(self):
 		return self.data['width']
 
+class LineWidth(object):
+	@staticmetod
+	def GetLinear(self, vspeed):
+		# 使用一次线性函数计算线宽
+		avgWidth = 10
+		minWidth = 2
+		avgVSpeed = 0.1
+		width = (1 - VSpeed / (2 * avgVSpeed)) * avgWidth
+		logging.debug('%12d    %4.1f    %4.4f    %2.1f' % (t0-t1, distance, VSpeed, width))
+		# logging.debug(width)
+		if width > 15:
+			width = 15
+		if width < 2:
+			width = 2
+		return width
+
 class MagicPenBrush(MagicPen):
 	def __init__(self, img, imgName, conf):
 		MagicPen.__init__(self, img, imgName, conf)
@@ -174,18 +190,7 @@ class MagicPenBrush(MagicPen):
 
 		distance = math.sqrt((y1 - y0)**2 + (x1 - x0)**2)
 		VSpeed = distance * 1000000 / (t0 - t1)
-
-		avgWidth = 10
-		minWidth = 2
-		avgVSpeed = 0.1
-		width = (1 - VSpeed / (2 * avgVSpeed)) * avgWidth
-		logging.debug('%12d    %4.1f    %4.4f    %2.1f' % (t0-t1, distance, VSpeed, width))
-		# logging.debug(width)
-		if width > 15:
-			width = 15
-		if width < 2:
-			width = 2
-		# logging.debug(width)
+		width = LineWidth.GetLinear(VSpeed)
 		wdconst = width / distance
 		lx1 = x1 + (y0 - y1) * wdconst
 		ly1 = y1 + (x1 - x0) * wdconst
