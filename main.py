@@ -43,6 +43,10 @@ class MPLine(object):
 	def GetPointNum(self):
 		return len(self.data)
 
+	def GetBasePoints(self):
+		basePoints = numpy.array([(pt[0], pt[1]) for pt in self.data], numpy.int32)
+		return basePoints
+
 class MPTracker(object):
 	# 笔迹是由笔画（线）组成，笔画由点组成，MPTracker保存笔画的集合
 	def __init__(self):
@@ -150,7 +154,12 @@ class MPBrushPointExtra(object):
 
 class SkelentonHelper(object):
 	def MakeSkelenton(self, mpLine):
+		# 生成排骨架
 		# 根据(x0, y0, t0)、(x1, y1, t1)和(x2, y2, t2, extra2)计算extra1
+		return None
+
+	def MakeOutline(self, mpLine):
+		# 生成插值线条
 		return None
 
 class LinearSkelentonHelper(SkelentonHelper):
@@ -200,25 +209,34 @@ class LinearSkelentonHelper(SkelentonHelper):
 		pt1[3] = extraData
 		return extraData
 
+	def makeSkelentonOutline(self, mpLine):
+		# 不插值，只根据排骨架生成平滑轮廓
+		lpts = []
+		rpts = []
+		lastLpts = [-1, -1]
+		lastRpts = [-1, -1]
+		for pt in mpLine.data:
+			extra = pt[3]
+			if extra is None:
+				continue
+			lx, ly, rx, ry = extra.GetLR()
+			if lastLpts[0] != lx and lastLpts[1] != ly:
+				lpts.append((lx, ly))
+			lastLpts[0] = lx
+			lastLpts[1] = ly
 
-class MagicPenBrush(MagicPen):
-	def __init__(self, img, imgName, conf):
-		MagicPen.__init__(self, img, imgName, conf)
-		# 已经抬笔的笔画保存到backImg，每次重绘时使用self.img = self.backImg + 尚未抬笔的笔画
-		self.backImg = self.img.copy()
-		self.maskImg = numpy.zeros((self.backImg.shape[0] + 2, self.backImg.shape[1] + 2), numpy.uint8)
-		self.maskImg[:] = 0
-		self.skelentonHelper = LinearSkelentonHelper()
+			if lastRpts[0] != rx and lastRpts[1] != ry:
+				rpts.append((rx, ry))
+			lastRpts[0] = rx
+			lastRpts[1] = ry
 
-	def Clean(self):
-		MagicPen.Clean(self)
-		self.backImg[:, :] = (255, 255, 255)
+		outline = numpy.zeros((len(lpts) + len(rpts) + 1, 2), numpy.int32)
+		outline[: len(lpts), :] = lpts
+		outline[len(lpts), :] = [mpLine.data[-1][0], mpLine.data[-1][1]]
+		outline[len(lpts) + 1: , :] = rpts[::-1]
 
-	def Begin(self, x, y, t=None):
-		MagicPen.Begin(self, x, y, t)
-
-	def createPointExtraData(self, mpLine):
-		return self.skelentonHelper.MakeSkelenton(mpLine)
+		mpLine.extra = outline
+		return mpLine.extra
 
 	def createCubicInterp(self, x, y):
 		tck, u = scipy.interpolate.splprep([x,y], k=3, s=0)
@@ -227,18 +245,19 @@ class MagicPenBrush(MagicPen):
 		xInterps = out[0]
 		yInterps = out[1]
 		return xInterps, yInterps
-
-	def createOutline(self, line):
+		
+	def makeInterpOutline(self, mpLine):
+		# 通过插值生成更平滑的轮廓
 		lxList = []
 		lyList = []
 		rxList = []
 		ryList = []
-		if line is None:
+		if mpLine is None:
 			return None
 
 		lastlpt = None
 		lastrpt = None
-		for pt in line.data:
+		for pt in mpLine.data:
 			ptExtra = pt[3]
 			if ptExtra is None:
 				continue
@@ -266,20 +285,42 @@ class MagicPenBrush(MagicPen):
 
 		outline[ : len(lxInterps), 0] = lxInterps
 		outline[ : len(lyInterps), 1] = lyInterps
-		outline[len(lxInterps), 0] = line.data[-1][0]
-		outline[len(lyInterps), 1] = line.data[-1][1]
+		outline[len(lxInterps), 0] = mpLine.data[-1][0]
+		outline[len(lyInterps), 1] = mpLine.data[-1][1]
 		outline[len(lxInterps) + 1 : , 0] = rxInterps[::-1]
 		outline[len(lyInterps) + 1 : , 1] = ryInterps[::-1]
 
-		line.extra = outline
-		return line.extra
+		mpLine.extra = outline
+		return mpLine.extra
+
+	def MakeOutline(self, mpLine):
+		return self.makeSkelentonOutline(mpLine)
+
+class MagicPenBrush(MagicPen):
+	def __init__(self, img, imgName, conf):
+		MagicPen.__init__(self, img, imgName, conf)
+		# 已经抬笔的笔画保存到backImg，每次重绘时使用self.img = self.backImg + 尚未抬笔的笔画
+		self.backImg = self.img.copy()
+		self.maskImg = numpy.zeros((self.backImg.shape[0] + 2, self.backImg.shape[1] + 2), numpy.uint8)
+		self.maskImg[:] = 0
+		self.skelentonHelper = LinearSkelentonHelper()
+
+	def Clean(self):
+		MagicPen.Clean(self)
+		self.backImg[:, :] = (255, 255, 255)
+
+	def Begin(self, x, y, t=None):
+		MagicPen.Begin(self, x, y, t)
 
 	def Continue(self, x, y, t=None):
-		lastLine = MagicPen.Continue(self, x, y, t) 	# 记录原始笔迹
-		# logging.debug('==== [%d, %d]' % (x, y))
-		pointExtraData = self.createPointExtraData(lastLine)	# 为每个笔记点生成左右点
-		# logging.debug(pointExtraData.GetLR())
-		lineExtraData = self.createOutline(lastLine)	# 插值
+		# 记录原始笔迹
+		lastLine = MagicPen.Continue(self, x, y, t)
+
+		# 为每个笔迹点生成排骨架
+		pointExtraData = self.skelentonHelper.MakeSkelenton(lastLine)
+
+		# 插值生成轮廓
+		lineExtraData = self.skelentonHelper.MakeOutline(lastLine)
 		return lastLine
 
 	def drawMPLineToImg(self, mpLine, img):
@@ -296,8 +337,10 @@ class MagicPenBrush(MagicPen):
 		outlinePts = numpy.int32(mpLine.extra)
 		# logging.debug(outlinePts)
 		cv2.polylines(img, [outlinePts], True, fillColor, 1, cv2.LINE_AA)
-		cv2.fillPoly(img, [outlinePts], fillColor)
+		# cv2.fillPoly(img, [outlinePts], fillColor)
 		# cv2.fillConvexPoly(img, outlinePts, fillColor)
+		cv2.polylines(img, outlinePts.reshape(-1, 1, 2), True, blackColor, 3)
+		cv2.polylines(img, mpLine.GetBasePoints().reshape(-1, 1, 2), True, (0, 0, 255), 3)
 
 	def End(self, x, y, t=None):
 		lastLine = self.Continue(x, y, t)

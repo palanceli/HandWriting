@@ -389,9 +389,19 @@ class samples(object):
 
 		self.waitToClose(img)
 
+	def caseTemp(self):
+		img = numpy.zeros((500, 899, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([[ 79, 67], [ 85, 68], [ 97, 70], [122, 71], [129, 70], 
+			[176, 68], [181, 66], [190, 64], [191, 73], [179, 81], [130, 83], 
+			[122, 82], [ 84, 79], [ 76, 76]], numpy.int32)
+		cv2.polylines(img, [pts], True, (0, 0, 0), 1, cv2.LINE_AA)
+		cv2.polylines(img, pts.reshape(-1, 1, 2), True, (0, 0, 0), 3)
+		self.waitToClose(img)
+
 
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.caseR08()
+    s.caseTemp()
