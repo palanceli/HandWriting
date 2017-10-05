@@ -10,6 +10,9 @@ import sys
 import scipy
 import scipy.interpolate
 
+def distance(x1, y1, x2, y2):
+	return math.sqrt((y2 - y1)**2 + (x2 - x1)**2)
+
 class MPLine(object):
 	# MPLine记录一条笔画，其中x y t是原始数据，由该类负责记录和保存，
 	# extra是附加数据，也是和笔迹相关的数据，由调用方负责产生，MPLine只负责记录
@@ -132,6 +135,14 @@ class MagicPen(object):
 	def Redraw(self):
 		return
 
+	def GetCurrDarwingMPLine(self):
+		if len(self.mpTracker.trackList) == 0:
+			return None
+		mpLine = self.mpTracker.trackList[-1]
+		if mpLine.isEnd:
+			return None
+		return mpLine
+
 	# SaveTrack、LoadTrack 保存和加载原始笔迹
 	def SaveTrack(self):
 		self.mpTracker.Save()
@@ -213,22 +224,24 @@ class LinearSkelentonHelper(SkelentonHelper):
 		# 不插值，只根据排骨架生成平滑轮廓
 		lpts = []
 		rpts = []
-		lastLpts = [-1, -1]
-		lastRpts = [-1, -1]
+		lpt0 = [-1, -1] # 向前第一个l点
+		rpt0 = [-1, -1] # 向前第一个r点
+		lpt1 = [-1, -1] # 向前第二个l点
+		rpt1 = [-1, -1] # 向前第二个r点
 		for pt in mpLine.data:
 			extra = pt[3]
 			if extra is None:
 				continue
 			lx, ly, rx, ry = extra.GetLR()
-			if lastLpts[0] != lx and lastLpts[1] != ly:
+			if lpt0[0] != lx and lpt0[1] != ly:
 				lpts.append((lx, ly))
-			lastLpts[0] = lx
-			lastLpts[1] = ly
+			lpt0[0] = lx
+			lpt0[1] = ly
 
-			if lastRpts[0] != rx and lastRpts[1] != ry:
+			if rpt0[0] != rx and rpt0[1] != ry:
 				rpts.append((rx, ry))
-			lastRpts[0] = rx
-			lastRpts[1] = ry
+			rpt0[0] = rx
+			rpt0[1] = ry
 
 		outline = numpy.zeros((len(lpts) + len(rpts) + 1, 2), numpy.int32)
 		outline[: len(lpts), :] = lpts
@@ -310,9 +323,24 @@ class MagicPenBrush(MagicPen):
 		self.backImg[:, :] = (255, 255, 255)
 
 	def Begin(self, x, y, t=None):
-		MagicPen.Begin(self, x, y, t)
+		# logging.debug('beging:(%d, %d)' % (x, y))
+		if len(self.mpTracker.trackList) > 0:	# 如果前一笔没有End，则将其设置为完结，并绘制到backImg上
+			mpLine = self.mpTracker.trackList[-1]
+			mpLine.isEnd = True
+			self.drawMPLineToImg(mpLine, self.backImg)
+		return MagicPen.Begin(self, x, y, t)
 
 	def Continue(self, x, y, t=None):
+		mpLine = self.GetCurrDarwingMPLine()
+		if mpLine is not None and len(mpLine.data) >= 2:
+			x1, y1 = mpLine.data[-1][0], mpLine.data[-1][1]
+			x2, y2 = mpLine.data[-2][0], mpLine.data[-2][1]
+			# 如果∠210是个锐角或直角 
+			if ((x2 - x)**2 + (y2 - y)**2) <= ((x2 - x1)**2 + (y2 - y1)**2) + ((x1 - x)**2 + (y1 - y)**2):
+				logging.debug('got...')
+				return self.Begin(x, y)
+
+		logging.debug('continue:(%d, %d)' % (x, y))
 		# 记录原始笔迹
 		lastLine = MagicPen.Continue(self, x, y, t)
 
@@ -341,6 +369,7 @@ class MagicPenBrush(MagicPen):
 		# cv2.fillConvexPoly(img, outlinePts, fillColor)
 		cv2.polylines(img, outlinePts.reshape(-1, 1, 2), True, blackColor, 3)
 		cv2.polylines(img, mpLine.GetBasePoints().reshape(-1, 1, 2), True, (0, 0, 255), 3)
+		logging.debug(mpLine.GetBasePoints())
 
 	def End(self, x, y, t=None):
 		lastLine = self.Continue(x, y, t)
