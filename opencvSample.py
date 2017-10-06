@@ -112,10 +112,41 @@ class samples(object):
 
 		self.waitToClose(img)
 
-	def case0101(self):
+	def case09(self):
 		# 读入一张图片
-	    img = cv2.imread('sample01.jpg', 0)
-	    self.waitToClose(img)
+		# IMAGE = [i for i in dir(cv2) if 'IMAGE' in i]
+		# logging.debug(IMAGE)
+		# img = cv2.imread('dot.png')
+		# logging.debug(img.shape)
+		img = cv2.imread('dot.png', -1)
+		logging.debug(img.shape)
+		self.waitToClose(img)
+
+	def case10(self):
+		# 图像混合
+		# background = numpy.zeros((300, 300, 3), numpy.uint8)
+		# img = cv2.imread('dot.png', 0)
+
+		# x, y = 100, 100 	# img要放置到background什么位置
+		# ret, mask = cv2.threshold(img, 30, 255, cv2.THRESH_BINARY) # 前景变白，背景为0
+		# maskInv = cv2.bitwise_not(mask)	# 翻转：前景为0，背景为白
+		img1 = cv2.imread('messi.jpg')
+		img2 = cv2.imread('opencv_logo.png')
+
+		rows, cols, channels = img2.shape
+		roi = img1[0:rows, 0:cols]
+
+		img2gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)	# logo转成灰度图
+		ret, mask = cv2.threshold(img2gray, 20, 255, cv2.THRESH_BINARY)	# 前景纯白，背景纯黑
+		mask_inv = cv2.bitwise_not(mask)					# 翻转：前景纯黑，背景纯白
+		
+		self.waitToClose(mask)
+		img1_bg = cv2.bitwise_and(roi, roi, mask = mask)
+		img2_fg = cv2.bitwise_and(img2, img2, mask = mask_inv)
+
+		dst = cv2.add(img1_bg, img2_fg)
+		img1[0:rows, 0:cols] = dst
+		self.waitToClose(img1)		
 
 	def case0701(self):
 		# 在鼠标双击的地方绘制圆圈
@@ -482,4 +513,4 @@ if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.case08a()
+    s.case10()

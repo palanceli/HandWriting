@@ -21,7 +21,8 @@ class samples(object):
 
 	def case0101(self):
 		# 读入一张图片
-	    img = cv2.imread('dot.png')
+	    img = cv2.imread('dot.png', -1)
+	    logging.debug(img.shape)
 	    self.waitToClose(img)
 
 	def case0701(self):
