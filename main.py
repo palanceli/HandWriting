@@ -173,6 +173,30 @@ class SkelentonHelper(object):
 		# 生成插值线条
 		return None
 
+class LineSegmentIntersectJudger(object):
+	# 判断两条线段是否相交
+	@staticmethod
+	def IsIntersect(ptA, ptB, ptC, ptD):
+		# 线段AB和CD相交的条件为：CD在直线AB的两侧 && AB在直线CD的两侧
+		cls = LineSegmentIntersectJudger
+		if cls.ptIs2SidesLine(ptA, ptB, ptC, ptD) and cls.ptIs2SidesLine(ptC, ptD, ptA, ptB):
+			return True
+		return False
+
+	@staticmethod
+	def ptIs2SidesLine(pt0, pt1, line0, line1):
+		# line的直线方程为：f(x, y) = (y - yA) * (xA - XB) - (x - xA) * (yA - YB) = 0
+		# CD 在直线两侧的条件为：fC * fD > 0
+		xC, yC = pt0[0], pt0[1]
+		xD, yD = pt1[0], pt1[1]
+		xA, yA = line0[0], line0[1]
+		xB, yB = line1[0], line1[1]
+		fC = (yC - yA) * (xA - xB) - (xC - xA) * (yA - yB)
+		fD = (yD - yA) * (xA - xB) - (xD - xA) * (yA - yB)
+		if (fC > 0 and fD < 0) or (fC < 0 and fD > 0):
+			return True
+		return False
+
 class LinearSkelentonHelper(SkelentonHelper):
 	def minWidth(self):
 		return 5
@@ -220,33 +244,59 @@ class LinearSkelentonHelper(SkelentonHelper):
 		pt1[3] = extraData
 		return extraData
 
+	def addPt2Pts(self, pt, pts):
+		if len(pts) == 0:			# 之前为空，则直接添加
+			pts.append(pt)
+			return
+		# len(pts) >= 1
+		x0 = pt[0]
+		y0 = pt[1]
+		bx0 = pt[2]
+		by0 = pt[3]
+		x1 = pts[-1][0]
+		y1 = pts[-1][1]
+		bx1 = pts[-1][2]
+		by1 = pts[-1][3]
+		if x0 == x1 and y0 == y1:	# 和前一个点重合，则不再重复添加
+			return
+
+		# 前一个脊椎-肋骨端子 和当前脊椎-肋骨端子之间如果相交，则不添加
+		if LineSegmentIntersectJudger.IsIntersect((bx0, by0), (x0, y0), (bx1, by1), (x1, y1)):
+			return
+
+		if len(pts) == 1:
+			pts.append(pt)
+			return
+		# len(pts) > 1
+		x2 = pts[-2][0]
+		y2 = pts[-2][1]
+		# 如果∠210是个锐角或直角，则不再添加 pt0
+		if ((x2 - x0)**2 + (y2 - y0)**2) <= ((x2 - x1)**2 + (y2 - y1)**2) + ((x1 - x0)**2 + (y1 - y0)**2):
+			msg = '发现锐角：(%d, %d), (%d, %d), (%d, %d), %d - %d - %d' % (x0, y0, x1, y1, x2, y2, 
+				(x2 - x0)**2 + (y2 - y0)**2, (x2 - x1)**2 + (y2 - y1)**2, (x1 - x0)**2 + (y1 - y0)**2)
+			logging.debug(msg)
+			return
+		pts.append(pt)
+
 	def makeSkelentonOutline(self, mpLine):
 		# 不插值，只根据排骨架生成平滑轮廓
 		lpts = []
 		rpts = []
-		lpt0 = [-1, -1] # 向前第一个l点
-		rpt0 = [-1, -1] # 向前第一个r点
-		lpt1 = [-1, -1] # 向前第二个l点
-		rpt1 = [-1, -1] # 向前第二个r点
 		for pt in mpLine.data:
 			extra = pt[3]
 			if extra is None:
 				continue
+			x, y = pt[0], pt[1]
 			lx, ly, rx, ry = extra.GetLR()
-			if lpt0[0] != lx and lpt0[1] != ly:
-				lpts.append((lx, ly))
-			lpt0[0] = lx
-			lpt0[1] = ly
 
-			if rpt0[0] != rx and rpt0[1] != ry:
-				rpts.append((rx, ry))
-			rpt0[0] = rx
-			rpt0[1] = ry
+			self.addPt2Pts((lx, ly, x, y), lpts)
+			self.addPt2Pts((rx, ry, x, y), rpts)
+
 
 		outline = numpy.zeros((len(lpts) + len(rpts) + 1, 2), numpy.int32)
-		outline[: len(lpts), :] = lpts
+		outline[: len(lpts), :] = [ (pt[0], pt[1]) for pt in lpts]
 		outline[len(lpts), :] = [mpLine.data[-1][0], mpLine.data[-1][1]]
-		outline[len(lpts) + 1: , :] = rpts[::-1]
+		outline[len(lpts) + 1: , :] = [(pt[0], pt[1]) for pt in rpts[::-1]]
 
 		mpLine.extra = outline
 		return mpLine.extra
@@ -335,12 +385,17 @@ class MagicPenBrush(MagicPen):
 		if mpLine is not None and len(mpLine.data) >= 2:
 			x1, y1 = mpLine.data[-1][0], mpLine.data[-1][1]
 			x2, y2 = mpLine.data[-2][0], mpLine.data[-2][1]
+			if x == x1 and y == y1:		# 如果和前一个点重合，则不再重复添加
+				return mpLine
+
 			# 如果∠210是个锐角或直角 
 			if ((x2 - x)**2 + (y2 - y)**2) <= ((x2 - x1)**2 + (y2 - y1)**2) + ((x1 - x)**2 + (y1 - y)**2):
-				logging.debug('got...')
+				msg = '主笔迹发现锐角：(%d, %d), (%d, %d), (%d, %d)，%d - %d - %d'% (x, y, x1, y1, x2, y2, 
+					(x2 - x)**2 + (y2 - y)**2, (x2 - x1)**2 + (y2 - y1)**2, (x1 - x)**2 + (y1 - y)**2)
+				logging.debug(msg)
 				return self.Begin(x, y)
 
-		logging.debug('continue:(%d, %d)' % (x, y))
+		# logging.debug('continue:(%d, %d)' % (x, y))
 		# 记录原始笔迹
 		lastLine = MagicPen.Continue(self, x, y, t)
 
@@ -369,7 +424,7 @@ class MagicPenBrush(MagicPen):
 		# cv2.fillConvexPoly(img, outlinePts, fillColor)
 		cv2.polylines(img, outlinePts.reshape(-1, 1, 2), True, blackColor, 3)
 		cv2.polylines(img, mpLine.GetBasePoints().reshape(-1, 1, 2), True, (0, 0, 255), 3)
-		logging.debug(mpLine.GetBasePoints())
+		# logging.debug(mpLine.GetBasePoints())
 
 	def End(self, x, y, t=None):
 		lastLine = self.Continue(x, y, t)
@@ -435,8 +490,8 @@ class MagicPenApp(object):
 
 		cv2.setMouseCallback(self.imgName, mouseCallback, self)
 
-		self.pen.LoadTrack()
-		self.pen.Redraw()
+		# self.pen.LoadTrack()
+		# self.pen.Redraw()
 
 		# 响应快捷键
 		while True:

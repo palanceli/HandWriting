@@ -21,7 +21,7 @@ class samples(object):
 
 	def case0101(self):
 		# 读入一张图片
-	    img = cv2.imread('sample01.jpg', 0)
+	    img = cv2.imread('dot.png')
 	    self.waitToClose(img)
 
 	def case0701(self):
@@ -404,4 +404,4 @@ if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.caseTemp()
+    s.case0101()
