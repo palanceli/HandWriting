@@ -11,9 +11,20 @@ import matplotlib
 import matplotlib.pyplot
 
 class Cap(object):
-	def __init__(self):
+	def __init__(self, width = None, height = None):
 		self.capImg = cv2.imread('dot.png')
 		self.rows, self.cols, channels = self.capImg.shape
+		factor = None
+		if width is not None:
+			factor = float(width) / float(self.cols)
+		if height is not None:
+			factor = float(height) / float(self.rows)
+		if factor is not None:
+			logging.debug(factor)
+			self.capImg = cv2.resize(self.capImg, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC)
+			self.rows, self.cols, channels = self.capImg.shape
+
+
 		capgray = cv2.cvtColor(self.capImg, cv2.COLOR_BGR2GRAY)
 		ret, self.mask = cv2.threshold(capgray, 20, 255, cv2.THRESH_BINARY)
 		self.mask_inv = cv2.bitwise_not(self.mask)
@@ -55,12 +66,12 @@ class samples(object):
 	def case0101(self):
 		img = numpy.zeros((300, 300, 3), numpy.uint8)
 		img[:, :] = (255, 255, 255)
-		pts = numpy.array([[0, 10], [100, 10], [100, 30], [0, 30]], numpy.int32)
+		pts = numpy.array([[15, 10], [100, 10], [100, 30], [15, 30]], numpy.int32)
 		cv2.polylines(img, [pts.reshape(-1, 1, 2)], True, (0, 0, 0), 1, cv2.LINE_AA)
 		cv2.fillPoly(img, [pts.reshape(-1, 1, 2)], (31, 31, 31))
 		
-		cap = Cap()
-		self.waitToClose(cap.Paste2Img(img, 10, 10))
+		cap = Cap(width=20)
+		self.waitToClose(cap.Paste2Img(img, 3, 8))
 
 	def case0701(self):
 		# 在鼠标双击的地方绘制圆圈
