@@ -134,7 +134,7 @@ class samples(object):
 		ret, mask = cv2.threshold(img2gray, 20, 255, cv2.THRESH_BINARY)	# 前景纯白，背景纯黑
 		mask_inv = cv2.bitwise_not(mask)					# 翻转：前景纯黑，背景纯白
 		
-		# img1_bg = roi ^ roi if mask≠0
+		# img1_bg = if(mask≠0){roi ^ roi}else{mask}
 		img1_bg = cv2.bitwise_and(roi, roi, mask = mask_inv) # 在messi中把logo部分变黑
 
 		img2_fg = cv2.bitwise_and(img2, img2, mask = mask_inv)
