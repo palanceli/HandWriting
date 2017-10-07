@@ -144,6 +144,15 @@ class samples(object):
 		self.waitToClose(background)
 		return
 
+	def case11(self):
+		# 图像缩放
+		logo = cv2.imread('opencv_logo.png')
+		res1 = cv2.resize(logo, None, fx=0.8, fy=0.8, interpolation=cv2.INTER_CUBIC)
+		height, width = logo.shape[:2]
+		res2 = cv2.resize(logo, (int(width*1.5), int(height*1.5)), interpolation=cv2.INTER_CUBIC)
+		self.waitToClose(res1)
+		self.waitToClose(res2)
+
 	def case0701(self):
 		# 在鼠标双击的地方绘制圆圈
 		events = [i for i in dir(cv2) if 'EVENT' in i]
@@ -509,4 +518,4 @@ if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.case10()
+    s.case11()

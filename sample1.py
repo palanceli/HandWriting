@@ -66,9 +66,9 @@ class samples(object):
 	def case0101(self):
 		img = numpy.zeros((300, 300, 3), numpy.uint8)
 		img[:, :] = (255, 255, 255)
-		pts = numpy.array([[15, 10], [100, 10], [100, 30], [15, 30]], numpy.int32)
+		pts = numpy.array([[18, 10], [100, 10], [100, 30], [18, 30]], numpy.int32)
 		cv2.polylines(img, [pts.reshape(-1, 1, 2)], True, (0, 0, 0), 1, cv2.LINE_AA)
-		cv2.fillPoly(img, [pts.reshape(-1, 1, 2)], (31, 31, 31))
+		# cv2.fillPoly(img, [pts.reshape(-1, 1, 2)], (31, 31, 31))
 		
 		cap = Cap(width=20)
 		self.waitToClose(cap.Paste2Img(img, 3, 8))
