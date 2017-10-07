@@ -10,6 +10,22 @@ import scipy.interpolate
 import matplotlib
 import matplotlib.pyplot
 
+class Cap(object):
+	def __init__(self):
+		self.capImg = cv2.imread('dot.png')
+		self.rows, self.cols, channels = self.capImg.shape
+		capgray = cv2.cvtColor(self.capImg, cv2.COLOR_BGR2GRAY)
+		ret, self.mask = cv2.threshold(capgray, 20, 255, cv2.THRESH_BINARY)
+		self.mask_inv = cv2.bitwise_not(self.mask)
+		self.fg = cv2.bitwise_and(self.capImg, self.capImg, mask=self.mask)
+
+	def Paste2Img(self, img, x, y):
+		roi = img[y : y+self.rows, x : x+self.cols]
+		bg = cv2.bitwise_and(roi, roi, mask=self.mask_inv)
+		dst = cv2.add(bg, self.fg)
+		img[y : y+self.rows, x : x+self.cols] = dst
+		return img
+
 class samples(object):
 	def waitToClose(self, img):
 		while True:
@@ -19,11 +35,32 @@ class samples(object):
 		
 		cv2.destroyAllWindows()
 
+	def pasteCap2Img(self, cap, img, x, y):
+		# 将cap贴到img的(x, y)位置
+		rows, cols, channels = cap.shape
+		roi = img[y : y+rows, x : x+cols]
+		capgray = cv2.cvtColor(cap, cv2.COLOR_BGR2GRAY)
+
+		ret, mask = cv2.threshold(capgray, 20, 255, cv2.THRESH_BINARY)
+		mask_inv = cv2.bitwise_not(mask)
+		# logging.debug('cap=%s, roi=%s, mask=%s, mask_inv=%s' % (cap.dtype, roi.dtype, mask.dtype, mask_inv.dtype))
+		# logging.debug('cap=%s, roi=%s, mask=%s, mask_inv=%s' % (cap.shape, roi.shape, mask.shape, mask_inv.shape))
+		bg = cv2.bitwise_and(roi, roi, mask=mask_inv)
+		fg = cv2.bitwise_and(cap, cap, mask=mask)
+
+		dst = cv2.add(bg, fg)
+		img[y : y+rows, x : x+cols] = dst
+		return img
+
 	def case0101(self):
-		# 读入一张图片
-	    img = cv2.imread('dot.png', -1)
-	    logging.debug(img.shape)
-	    self.waitToClose(img)
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		pts = numpy.array([[0, 10], [100, 10], [100, 30], [0, 30]], numpy.int32)
+		cv2.polylines(img, [pts.reshape(-1, 1, 2)], True, (0, 0, 0), 1, cv2.LINE_AA)
+		cv2.fillPoly(img, [pts.reshape(-1, 1, 2)], (31, 31, 31))
+		
+		cap = Cap()
+		self.waitToClose(cap.Paste2Img(img, 10, 10))
 
 	def case0701(self):
 		# 在鼠标双击的地方绘制圆圈

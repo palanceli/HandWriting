@@ -359,6 +359,22 @@ class LinearSkelentonHelper(SkelentonHelper):
 	def MakeOutline(self, mpLine):
 		return self.makeSkelentonOutline(mpLine)
 
+class Cap(object):
+	def __init__(self):
+		self.capImg = cv2.imread('dot.png')
+		self.rows, self.cols, channels = self.capImg.shape
+		capgray = cv2.cvtColor(self.capImg, cv2.COLOR_BGR2GRAY)
+		ret, self.mask = cv2.threshold(capgray, 20, 255, cv2.THRESH_BINARY)
+		self.mask_inv = cv2.bitwise_not(self.mask)
+		self.fg = cv2.bitwise_and(self.capImg, self.capImg, mask=self.mask)
+
+	def Paste2Img(self, img, x, y):
+		roi = img[y : y+self.rows, x : x+self.cols]
+		bg = cv2.bitwise_and(roi, roi, mask=self.mask_inv)
+		dst = cv2.add(bg, self.fg)
+		img[y : y+self.rows, x : x+self.cols] = dst
+		return img
+
 class MagicPenBrush(MagicPen):
 	def __init__(self, img, imgName, conf):
 		MagicPen.__init__(self, img, imgName, conf)
@@ -416,11 +432,18 @@ class MagicPenBrush(MagicPen):
 
 		lightColor = (220, 220, 220)
 		blackColor = (0, 0, 0)
-		fillColor = (100, 100, 100)
+		fillColor = (31, 31, 31)
 		outlinePts = numpy.int32(mpLine.extra)
 		# logging.debug(outlinePts)
-		cv2.polylines(img, [outlinePts], True, fillColor, 1, cv2.LINE_AA)
-		# cv2.fillPoly(img, [outlinePts], fillColor)
+		cv2.polylines(img, [outlinePts], True, fillColor, 1, cv2.LINE_AA)	# 绘制轮廓
+		cv2.fillPoly(img, [outlinePts], fillColor)
+		# 绘制起笔
+		cap = Cap()
+		basePts = mpLine.GetBasePoints()
+		x = basePts[0][0]
+		y = basePts[0][1]
+		cap.Paste2Img(img, x-20, y-20)
+
 		# cv2.fillConvexPoly(img, outlinePts, fillColor)
 		cv2.polylines(img, outlinePts.reshape(-1, 1, 2), True, blackColor, 3)
 		cv2.polylines(img, mpLine.GetBasePoints().reshape(-1, 1, 2), True, (0, 0, 255), 3)

@@ -125,24 +125,24 @@ class samples(object):
 	def case10(self):
 		# 图像混合
 		background = cv2.imread('messi.jpg')
-		img2 = cv2.imread('opencv_logo.png')
+		logo = cv2.imread('opencv_logo.png')
 
-		rows, cols, channels = img2.shape
+		rows, cols, channels = logo.shape
 		roi = background[0:rows, 0:cols]
 
-		img2gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)	# logo转成灰度图
-		ret, mask = cv2.threshold(img2gray, 20, 255, cv2.THRESH_BINARY)	# 前景纯白，背景纯黑
+		logogray = cv2.cvtColor(logo, cv2.COLOR_BGR2GRAY)	# logo转成灰度图
+		ret, mask = cv2.threshold(logogray, 20, 255, cv2.THRESH_BINARY)	# 前景纯白，背景纯黑
 		mask_inv = cv2.bitwise_not(mask)					# 翻转：前景纯黑，背景纯白
 		
 		# img1_bg = if(mask≠0){roi ^ roi}else{mask}
 		img1_bg = cv2.bitwise_and(roi, roi, mask = mask_inv) # 在messi中把logo部分变黑
 
-		img2_fg = cv2.bitwise_and(img2, img2, mask = mask_inv)
-		self.waitToClose(img2_fg)
-		return
+		img2_fg = cv2.bitwise_and(logo, logo, mask = mask)
 
 		dst = cv2.add(img1_bg, img2_fg)
 		background[0:rows, 0:cols] = dst
+		self.waitToClose(background)
+		return
 
 	def case0701(self):
 		# 在鼠标双击的地方绘制圆圈
