@@ -360,13 +360,48 @@ class LinearSkelentonHelper(SkelentonHelper):
 		return self.makeSkelentonOutline(mpLine)
 
 class Cap(object):
-	def __init__(self):
+	def __init__(self, width = None, height = None):
 		self.capImg = cv2.imread('dot.png')
 		self.rows, self.cols, channels = self.capImg.shape
+		factor = None
+		if width is not None:
+			factor = float(width) / float(self.cols)
+		if height is not None:
+			factor = float(height) / float(self.rows)
+		if factor is not None:
+			logging.debug(factor)
+			self.capImg = cv2.resize(self.capImg, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC)
+			self.rows, self.cols, channels = self.capImg.shape
+
+
 		capgray = cv2.cvtColor(self.capImg, cv2.COLOR_BGR2GRAY)
 		ret, self.mask = cv2.threshold(capgray, 20, 255, cv2.THRESH_BINARY)
 		self.mask_inv = cv2.bitwise_not(self.mask)
 		self.fg = cv2.bitwise_and(self.capImg, self.capImg, mask=self.mask)
+
+	def Anchors(self, offsetX, offsetY, type=-1):
+		anchors = [
+			[self.cols * 0.65 + offsetX, self.rows * 0.6 + offsetY], 	# 0 中心点
+			[0 + offsetX, 0 + offsetY], 								# 1 左上尖
+			[self.cols * 0.4 + offsetX - 1, self.rows * 0.07 + offsetY + 1], 	# 2 颈
+			[self.cols * 0.8 + offsetX - 1, self.rows * 0.25 + offsetY + 1],	# 3 肩
+			[self.cols * 1.0 + offsetX - 1, self.rows * 0.6 + offsetY],		# 4 右
+			[self.cols * 0.95 + offsetX - 1, self.rows * 0.8 + offsetY],	# 5 臀
+			[self.cols * 0.65 + offsetX, self.rows * 1.0 + offsetY - 1],	# 6 底
+			[self.cols * 0.48 + offsetX, self.rows * 0.95 + offsetY - 1],	# 7 左下尖
+			[self.cols * 0.32 + offsetX + 1, self.rows * 0.6 + offsetY]]	# 8 腹
+		if type == 0:	# 中心点
+			return [anchors[0]]
+		elif type == 1:	# 横
+			return [anchors[0], anchors[1], anchors[6]]
+		elif type == 2:	# 竖
+			return [anchors[0], anchors[4], anchors[8]]
+		elif type == 3:	# 撇
+			return [anchors[0], anchors[7], anchors[8]]
+		elif type == 4:	# 捺
+			return [anchors[0], anchors[3], anchors[7]]
+		
+		return anchors
 
 	def Paste2Img(self, img, x, y):
 		roi = img[y : y+self.rows, x : x+self.cols]
