@@ -155,13 +155,19 @@ class MagicPen(object):
 class MPBrushPointExtra(object):
 	# 附着在每个MPPoint 的extra数据
 	def __init__(self, lx, ly, rx, ry, width):
-		self.data = {'lx':int(lx), 'ly':int(ly), 'rx':int(rx), 'ry':int(ry), 'width':width}
+		self.data = {'lx':int(lx), 'ly':int(ly), 'rx':int(rx), 'ry':int(ry), 'width':width, 'cap':None}
 
 	def GetLR(self):
 		return self.data['lx'], self.data['ly'], self.data['rx'], self.data['ry'], 
 
 	def GetWidth(self):
 		return self.data['width']
+
+	def SetCap(self, cap):
+		self.data['cap'] = cap
+
+	def GetCap(self):
+		return self.data['cap']
 
 class SkelentonHelper(object):
 	def MakeSkelenton(self, mpLine):
@@ -241,7 +247,12 @@ class LinearSkelentonHelper(SkelentonHelper):
 		rx1 = x1 + (y1 - y0) * w1 / d1
 		ry1 = y1 + (x0 - x1) * w1 / d1
 		extraData = MPBrushPointExtra(lx1, ly1, rx1, ry1, w1)
-		pt1[3] = extraData
+		pt1[3] = extraData 		# 给前一个采样点设置extraData
+
+		if mpLine.data.index(pt1) == 0:		# 为头结点设置CapStart
+			capStart = CapStart((x1, y1), (lx1, ly1), (rx1, ry1))
+			# logging.debug(capStart.capImg)
+			extraData.SetCap(capStart)
 		return extraData
 
 	def addPt2Pts(self, pt, pts):
@@ -282,6 +293,7 @@ class LinearSkelentonHelper(SkelentonHelper):
 		# 不插值，只根据排骨架生成平滑轮廓
 		lpts = []
 		rpts = []
+
 		for pt in mpLine.data:
 			extra = pt[3]
 			if extra is None:
@@ -292,11 +304,42 @@ class LinearSkelentonHelper(SkelentonHelper):
 			self.addPt2Pts((lx, ly, x, y), lpts)
 			self.addPt2Pts((rx, ry, x, y), rpts)
 
+		sCapPts = []
+		eCapPts = []
+		# 插值首尾Cap
+		if len(mpLine.data) > 0:
+			ptExtraData = mpLine.data[0][3]
+			if ptExtraData is not None:
+				capStart = ptExtraData.GetCap()
+				if capStart is not None:
+					if capStart.GetType() == 1:		# 横
+						anchorsStart = capStart.Anchors()
+						sCapPts.append(anchorsStart[0])
+						sCapPts.append(anchorsStart[1])
 
-		outline = numpy.zeros((len(lpts) + len(rpts) + 1, 2), numpy.int32)
-		outline[: len(lpts), :] = [ (pt[0], pt[1]) for pt in lpts]
-		outline[len(lpts), :] = [mpLine.data[-1][0], mpLine.data[-1][1]]
-		outline[len(lpts) + 1: , :] = [(pt[0], pt[1]) for pt in rpts[::-1]]
+			ptExtraData = mpLine.data[-1][3]
+			if ptExtraData is not None:
+				capEnd = ptExtraData.GetCap()
+				if capEnd is not None:
+					if capEnd.GetType() == 1:		# 横
+						anchorsEnd = capEnd.Anchors()
+						eCapPts.append(anchorsEnd[0])
+						eCapPts.append(anchorsEnd[1])
+
+		outline = numpy.zeros((len(sCapPts) + len(lpts) + len(rpts) + 1, 2), numpy.int32)
+		nStart = 0
+		if len(sCapPts) > 0:
+			outline[:len(sCapPts), :] = [(pt[0], pt[1]) for pt in sCapPts]
+			nStart += len(sCapPts)
+		
+		outline[nStart : nStart + len(lpts), :] = [ (pt[0], pt[1]) for pt in lpts]
+		nStart += len(lpts)
+
+		outline[nStart, :] = [mpLine.data[-1][0], mpLine.data[-1][1]]
+		nStart += 1
+
+		outline[nStart: , :] = [(pt[0], pt[1]) for pt in rpts[::-1]]
+		nStart += len(rpts)
 
 		mpLine.extra = outline
 		return mpLine.extra
@@ -360,55 +403,140 @@ class LinearSkelentonHelper(SkelentonHelper):
 		return self.makeSkelentonOutline(mpLine)
 
 class Cap(object):
-	def __init__(self, width = None, height = None):
-		self.capImg = cv2.imread('dot.png')
-		self.rows, self.cols, channels = self.capImg.shape
-		factor = None
-		if width is not None:
-			factor = float(width) / float(self.cols)
-		if height is not None:
-			factor = float(height) / float(self.rows)
-		if factor is not None:
-			logging.debug(factor)
-			self.capImg = cv2.resize(self.capImg, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC)
-			self.rows, self.cols, channels = self.capImg.shape
+	def __init__(self):
+		self.capImg = None
+		self.offsetX = None
+		self.offsetY = None
+		self.type = None
 
+	def GetType(self):
+		return self.type
 
-		capgray = cv2.cvtColor(self.capImg, cv2.COLOR_BGR2GRAY)
-		ret, self.mask = cv2.threshold(capgray, 20, 255, cv2.THRESH_BINARY)
-		self.mask_inv = cv2.bitwise_not(self.mask)
-		self.fg = cv2.bitwise_and(self.capImg, self.capImg, mask=self.mask)
-
-	def Anchors(self, offsetX, offsetY, type=-1):
+	def anchors(self):
+		rows, cols, channels = self.capImg.shape
 		anchors = [
-			[self.cols * 0.65 + offsetX, self.rows * 0.6 + offsetY], 	# 0 中心点
-			[0 + offsetX, 0 + offsetY], 								# 1 左上尖
-			[self.cols * 0.4 + offsetX - 1, self.rows * 0.07 + offsetY + 1], 	# 2 颈
-			[self.cols * 0.8 + offsetX - 1, self.rows * 0.25 + offsetY + 1],	# 3 肩
-			[self.cols * 1.0 + offsetX - 1, self.rows * 0.6 + offsetY],		# 4 右
-			[self.cols * 0.95 + offsetX - 1, self.rows * 0.8 + offsetY],	# 5 臀
-			[self.cols * 0.65 + offsetX, self.rows * 1.0 + offsetY - 1],	# 6 底
-			[self.cols * 0.48 + offsetX, self.rows * 0.95 + offsetY - 1],	# 7 左下尖
-			[self.cols * 0.32 + offsetX + 1, self.rows * 0.6 + offsetY]]	# 8 腹
-		if type == 0:	# 中心点
-			return [anchors[0]]
-		elif type == 1:	# 横
-			return [anchors[0], anchors[1], anchors[6]]
-		elif type == 2:	# 竖
-			return [anchors[0], anchors[4], anchors[8]]
-		elif type == 3:	# 撇
-			return [anchors[0], anchors[7], anchors[8]]
-		elif type == 4:	# 捺
-			return [anchors[0], anchors[3], anchors[7]]
-		
+			[cols * 0.65, rows * 0.6], 	# 0 中心点
+			[0, 0], 								# 1 左上尖
+			[cols * 0.4 - 1, rows * 0.07 + 1], 	# 2 颈
+			[cols * 0.8 - 1, rows * 0.25 + 1],	# 3 肩
+			[cols * 1.0 - 1, rows * 0.6],		# 4 右
+			[cols * 0.95 - 1, rows * 0.8],	# 5 臀
+			[cols * 0.65, rows * 1.0 - 1],	# 6 底
+			[cols * 0.48, rows * 0.95 - 1],	# 7 左下尖
+			[cols * 0.32 + 1, rows * 0.6]]	# 8 腹
+
 		return anchors
 
-	def Paste2Img(self, img, x, y):
-		roi = img[y : y+self.rows, x : x+self.cols]
-		bg = cv2.bitwise_and(roi, roi, mask=self.mask_inv)
-		dst = cv2.add(bg, self.fg)
-		img[y : y+self.rows, x : x+self.cols] = dst
+	def resize(self, img, width = None, height = None):
+		factor = None
+		rows, cols, channels = img.shape
+		if width is not None:
+			factor = float(width) / float(cols)
+		if height is not None:
+			factor = float(height) / float(rows)
+		if factor is None:
+			raise Exception('factor is None.')
+
+		return cv2.resize(img, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC)
+		
+	def Paste2Img(self, img):
+		capgray = cv2.cvtColor(self.capImg, cv2.COLOR_BGR2GRAY)
+		ret, mask = cv2.threshold(capgray, 20, 255, cv2.THRESH_BINARY)
+		mask_inv = cv2.bitwise_not(mask)
+		fg = cv2.bitwise_and(self.capImg, self.capImg, mask=mask)
+
+		rows, cols, channels = self.capImg.shape
+		roi = img[self.offsetY : self.offsetY+rows, self.offsetX : self.offsetX+cols]
+		bg = cv2.bitwise_and(roi, roi, mask=mask_inv)
+		dst = cv2.add(bg, fg)
+		img[self.offsetY : self.offsetY+rows, self.offsetX : self.offsetX+cols] = dst
 		return img
+
+class CapEnd(Cap):
+	def __init__(self, type, basePt, lPt, rPt):
+		Cap.__init__(self)
+		self.type = type
+		img = cv2.imread('dot.png')
+		h0, w0, channels = img.shape 	# 原始尺寸
+		if self.type == 1:
+			h1 = rPt[1] - lPt[1] 		# 预期高度
+			self.capImg = self.resize(img, width=None, height=h1)
+			self.offsetX = int(lPt[0])
+			self.offsetY = int(lPt[1])
+		else:
+			logging.debug('To Do ...')
+
+	def Anchors(self):
+		anchors = self.anchors()
+		if self.type == 0:	# 中心点
+			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, )]
+		elif self.type == 1:	# 横
+			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 6)]
+		else:
+			logging.debug('To Do ...')
+
+class CapStart(Cap):
+	def __init__(self, basePt, lPt, rPt):
+		Cap.__init__(self)
+		# basePt为脊柱关节，lPt、rPt为左右肋骨端点
+		self.type = self.getStartType(basePt, lPt, rPt)
+		logging.debug(self.type)
+		img = cv2.imread('dot.png')
+		h0, w0, channels = img.shape 	# 原始尺寸
+		if self.type == 1:
+			h1 = rPt[1] - lPt[1] 			# 预期高度
+			self.capImg = self.resize(img, width=None, height=h1)
+			anchors = self.anchors()
+			self.offsetX = int(rPt[0] - anchors[6][0])
+			self.offsetY = int(rPt[1] - anchors[6][1])
+		else:
+			logging.error('To Do ...')
+
+	def getStartType(self, basePt, lPt, rPt):
+		# (横：1)，(竖：2)， (撇：3)，(捺：4)，(勾：5)
+		deltaY = rPt[1] - lPt[1]
+		deltaX = rPt[0] - lPt[0]
+		logging.debug('deltaX:%d, deltaY:%d' % (deltaX, deltaY))
+		if deltaX == 0: 	# 水平情况
+			if deltaY < 0:
+				return 3 	# 向左，撇
+			return 1 		# 向右，横
+
+		tan = abs(float(deltaY) / float(deltaX))
+		if deltaY <= 0 and deltaX > 0:
+			if tan < 0.25: 
+				return 2 	# (0°~15°)竖↓
+			elif tan >= 0.25 and tan < 3.8:
+				return 4 	# [15°~75°)捺↘
+			return 1 		# [75°~ 90°)横→
+
+		if deltaY <= 0 and deltaX < 0:
+			if tan < 3.8:
+				return 5 	# (0°~75°)勾↑
+			return 1 		# [75°~ 90°)横→
+
+		if deltaY >= 0 and deltaX > 0:
+			if tan < 0.25:
+				return 2 	# (0°~15°)竖↓
+			elif tan >= 0.25 and tan < 3.8:
+				return 3 	# [15°~ 90°]撇↙←
+			return 5 		# (0°~90°)勾↑←
+
+		if deltaY >= 0 and deltaX < 0:
+			return 5 		# (0°~90°)勾↑←
+
+	def Anchors(self):
+		anchors = self.anchors()
+		if self.type == 0:	# 中心点
+			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, )]
+		elif self.type == 1:	# 横
+			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 1, 6)]
+		elif self.type == 2:	# 竖
+			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 4, 8)]
+		elif self.type == 3:	# 撇
+			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 7, 8)]
+		elif self.type == 4:	# 捺
+			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 3, 7)]
 
 class MagicPenBrush(MagicPen):
 	def __init__(self, img, imgName, conf):
@@ -441,8 +569,9 @@ class MagicPenBrush(MagicPen):
 
 			# 如果∠210是个锐角或直角 
 			if ((x2 - x)**2 + (y2 - y)**2) <= ((x2 - x1)**2 + (y2 - y1)**2) + ((x1 - x)**2 + (y1 - y)**2):
-				msg = '主笔迹发现锐角：(%d, %d), (%d, %d), (%d, %d)，%d - %d - %d'% (x, y, x1, y1, x2, y2, 
+				msg = '主笔迹发现锐角：(%d, %d), (%d, %d), (%d, %d)，%d - %d - %d\n'% (x, y, x1, y1, x2, y2, 
 					(x2 - x)**2 + (y2 - y)**2, (x2 - x1)**2 + (y2 - y1)**2, (x1 - x)**2 + (y1 - y)**2)
+				msg += '%s' % mpLine.data
 				logging.debug(msg)
 				return self.Begin(x, y)
 
@@ -472,16 +601,16 @@ class MagicPenBrush(MagicPen):
 		# logging.debug(outlinePts)
 		cv2.polylines(img, [outlinePts], True, fillColor, 1, cv2.LINE_AA)	# 绘制轮廓
 		cv2.fillPoly(img, [outlinePts], fillColor)
+		
 		# 绘制起笔
-		cap = Cap()
-		basePts = mpLine.GetBasePoints()
-		x = basePts[0][0]
-		y = basePts[0][1]
-		cap.Paste2Img(img, x-20, y-20)
+		ptExtraData = mpLine.data[0][3]
+		capStart = ptExtraData.GetCap()
+		if capStart is not None:
+			capStart.Paste2Img(img)
 
 		# cv2.fillConvexPoly(img, outlinePts, fillColor)
-		cv2.polylines(img, outlinePts.reshape(-1, 1, 2), True, blackColor, 3)
-		cv2.polylines(img, mpLine.GetBasePoints().reshape(-1, 1, 2), True, (0, 0, 255), 3)
+		cv2.polylines(img, outlinePts.reshape(-1, 1, 2), True, blackColor, 3)	# 绘制轮廓节点
+		cv2.polylines(img, mpLine.GetBasePoints().reshape(-1, 1, 2), True, (0, 0, 255), 3) # 绘制笔迹节点
 		# logging.debug(mpLine.GetBasePoints())
 
 	def End(self, x, y, t=None):
