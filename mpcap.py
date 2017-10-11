@@ -10,6 +10,7 @@ import sys
 import scipy
 import scipy.interpolate
 import unittest
+import json
 
 def WaitToClose(img):
 	while True:
@@ -105,12 +106,12 @@ class CapTanPointHelper(object):
 				idx = len(prevCoveredPoints) / 2
 				tanPt = prevCoveredPoints[idx]
 				# logging.debug(tanPt)
-				# cv2.polylines(prevImg, numpy.array([tanPt], numpy.int32).reshape(-1, 1, 2), True, (0, 0, 255), 1)
-				# WaitToClose(prevImg)
+				cv2.polylines(prevImg, numpy.array([tanPt], numpy.int32).reshape(-1, 1, 2), True, (0, 0, 255), 1)
+				WaitToClose(prevImg)
 				return tanPt
 		return None
 
-	def GetTanPoints(self, angle):	
+	def calculateTanPoints(self, angle):	
 		# 给定角度，求左右两个切点，角度是正方向→顺时针，返回的是相对cap中心的偏移
 		lpt = self.getTanPointOnSingleSide(angle, left=True)
 		rpt = self.getTanPointOnSingleSide(angle, left=False)
@@ -120,20 +121,115 @@ class CapTanPointHelper(object):
 		rpt[1] -= self.capY
 		return lpt, rpt
 
+	def CreateCapMetaFile(self, path):
+		# 把数据保存到path，每行格式为：
+		# 运笔角度的正切 运笔角度度数 该角度下的左切点 该角度下的右切点
+		capDataFile = CapMetaData()
+		for angle in range(0, 180):
+			lpt, rpt = self.calculateTanPoints(angle)
+			capDataFile.Set(angle, lpt, rpt)
+		capDataFile.Save(path)
+
+class CapMetaData(object):
+	def __init__(self):
+		self.data = []
+		self.infinitTan = 9999	# tan(90°)
+
+	def Set(self, angle, lpt, rpt):
+		tan = None
+		if angle == 90:
+			tan = self.infinitTan
+		else:
+			tan = math.tan(math.radians(angle))
+		self.data.append({'tan': tan, 'lpt':lpt, 'rpt':rpt})
+
+	def Get(self, deltaX, deltaY):
+		tan = float(deltaY) / float(deltaX)
+		prev = None
+		obj = None
+		logging.debug(tan)
+		for i in self.data:
+			logging.debug(i['tan'])
+			if tan == i['tan']:
+				obj = i
+				break
+			elif tan < i['tan']:
+				if prev is not None:
+					obj = prev
+					break
+				else:
+					obj = i
+					break
+			else:
+				prev = i
+		lx = obj['lpt'][0]
+		ly = obj['lpt'][1]
+		rx = obj['rpt'][0]
+		ry = obj['rpt'][1]
+		logging.debug(obj)
+		if (deltaX >= 0 and deltaY >= 0) or (deltaX <= 0 and deltaY >= 0): 	# ↘ ↙
+			return {'lx':lx, 'ly':ly, 'rx':rx, 'ry':ry}
+		else:																# ↖ ↗
+			return {'lx':rx, 'ly':ry, 'rx':lx, 'ry':ly}
+
+	def Save(self, path):
+		def cmp(x, y):
+			if x['tan'] < y['tan']:
+				return -1
+			elif x['tan'] > y['tan']:
+				return 1
+			return 0
+
+		self.data.sort(cmp)	
+		with open(path, 'wb') as f:
+			f.write(json.dumps(self.data))
+
+	def Load(self, path):
+		with open(path, 'rb') as f:
+			self.data = json.loads(f.read())
+
 class CapUT(unittest.TestCase):
 	def setUp(self):
 	    logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
 	    logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
 
-	def test01(self):
+	def testa01(self):
+		# 测试 角度->切点 的计算结果
 		capTPHelper = CapTanPointHelper()
-		lpt, rpt = capTPHelper.GetTanPoints(202)
+		lpt, rpt = capTPHelper.calculateTanPoints(123)	
+		self.assertEqual(lpt[0], 14)
+		self.assertEqual(lpt[1], 16)
+		self.assertEqual(rpt[0], -18)
+		self.assertEqual(rpt[1], -20)
 
-	def test02(self):
+	def testa02(self):
+		# 生成meta data数据
 		capTPHelper = CapTanPointHelper()
-		for angle in range(0, 360):
-			lpt, rpt = capTPHelper.GetTanPoints(angle)
-			logging.debug('angle:%3d, l:(%3d, %3d), r:(%3d, %3d)' % (angle, lpt[0], lpt[1], rpt[0], rpt[1]))
+		capTPHelper.CreateCapMetaFile('capMetaData.json')
+
+	def testa03(self):
+		# 测试meta data数据的正确性
+		capTPHelper = CapTanPointHelper()
+		# capTPHelper.CreateCapMetaFile('capMetaData.json')
+
+		capMetaData = CapMetaData()
+		capMetaData.Load('capMetaData.json')
+		tanInfo = capMetaData.Get(-1, 58)
+		self.assertEqual(tanInfo['lx'], 17)
+		self.assertEqual(tanInfo['ly'], 4)
+		self.assertEqual(tanInfo['rx'], -18)
+		self.assertEqual(tanInfo['ry'], -20)
+
+	def testm01(self):
+		# 需要人眼判断切点位置，
+		# 需要把getTanPointOnSingleSide()函数中绘制直线的注释打开
+		ctph = CapTanPointHelper()
+		deltaX = -1
+		deltaY = 58
+		tan = float(deltaY) / float(deltaX)
+		radians = math.atan(tan)
+		degrees = math.degrees(radians)
+		ctph.calculateTanPoints(degrees)
 
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
