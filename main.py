@@ -605,8 +605,8 @@ class MagicPenBrush(MagicPen):
 		# 绘制起笔
 		ptExtraData = mpLine.data[0][3]
 		capStart = ptExtraData.GetCap()
-		if capStart is not None:
-			capStart.Paste2Img(img)
+		# if capStart is not None:
+			# capStart.Paste2Img(img)
 
 		# cv2.fillConvexPoly(img, outlinePts, fillColor)
 		cv2.polylines(img, outlinePts.reshape(-1, 1, 2), True, blackColor, 3)	# 绘制轮廓节点
