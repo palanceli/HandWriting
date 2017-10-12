@@ -234,6 +234,7 @@ class MPLine(MPBaseLine):
 		x, y, t = basePt[0], basePt[1], basePt[2]
 		idx = self.data.index(basePt)
 		if idx == 0:	# 首节点，肋骨是由运笔角度和cap切点决定
+			logging.debug('首节点')
 			pta1 = self.data[idx + 1]	# 取后一个节点
 			xa1, ya1, ta1 = pta1[0], pta1[1], pta1[2]
 			deltaY = ya1 - y
@@ -250,6 +251,7 @@ class MPLine(MPBaseLine):
 			# logging.debug('lpt:%s, rpt:%s, lw:%s, rw:%s' % ((lx, ly), (rx, ry), lw, rw))
 			return {'lx':lx, 'ly':ly, 'lw': lw, 'rx':rx, 'ry':ry, 'rw':rw}
 		elif idx == len(self.data) - 1:	# 末节点，和普通节点不同在于，它和前一个点（而不是后一个点）确定方向
+			logging.debug('末节点')
 			ptb1 = self.data[idx - 1]	# 取前一个节点
 			xb1, yb1, tb1 = ptb1[0], ptb1[1], ptb1[2]
 			d = distance(x, y, xb1, yb1)
@@ -265,42 +267,56 @@ class MPLine(MPBaseLine):
 				rx = xb1 + (yb1 - y) * rw / d
 				ry = yb1 + (x - xb1) * rw / d
 		else: 			# 非首/末节点
+			logging.debug('非首末节点')
 			pta1 = self.data[idx + 1]
+			ptb1 = self.data[idx - 1]
 			xa1, ya1, ta1 = pta1[0], pta1[1], pta1[2]
-			d = distance(x, y, xa1, xb1)
+			d = distance(x, y, xa1, ya1)
 			v = d * 1000000 / (t - ta1)
 			w = self.calcWidth(v)
-			skla1 = self.getSkelentonPts(pta1)
-			if skla1 is not None:
-				lwa1 = skla1['lw']
-				rwa1 = skla1['rw']
+
+			sklb1 = self.getSkelentonPts(ptb1)
+			if sklb1 is not None:
+				lwb1 = sklb1['lw']
+				rwb1 = sklb1['rw']
 				lw = w
 				rw = w
-				if (lw - lwa1) / lwa1 > 0.1:
-					lw = 1.1 * lwa1
-				elif (lw - lwa1) / lwa1 < -0.1:
-					lw = 0.9 * lwa1
-				if (rw - rwa1) / rwa1 > 0.1:
-					rw = 1.1 * rwa1
-				elif (rw - rwa1) / rwa1 < -0.1:
-					rw = 0.9 * rwa1
+				if (lw - lwb1) / lwb1 > 0.1:
+					lw = 1.1 * lwb1
+				elif (lw - lwb1) / lwb1 < -0.1:
+					lw = 0.9 * lwb1
+				if (rw - rwb1) / rwb1 > 0.1:
+					rw = 1.1 * rwb1
+				elif (rw - rwb1) / rwb1 < -0.1:
+					rw = 0.9 * rwb1
 
-				lx = xb1 + (y - yb1) * lw / d
-				ly = yb1 + (xb1 - x) * lw / d
-				rx = xb1 + (yb1 - y) * rw / d
-				ry = yb1 + (x - xb1) * rw / d
+				lx = x + (ya1 - y) * lw / d
+				ly = y + (x - xa1) * lw / d
+				rx = x + (y - ya1) * rw / d
+				ry = y + (xa1 - x) * rw / d
 
-		return {'lx':lx, 'ly':ly, 'lw':lw, 'rx':rx, 'ry':ry, 'rw':rw}
+		return {'lx':int(lx), 'ly':int(ly), 'lw':lw, 'rx':int(rx), 'ry':int(ry), 'rw':rw}
 
 	def updateSkelenton(self):
 		if len(self.data) < 2: # 如果只有一个关节，无法计算法向量
 			return None
 
+		skl = self.createSkelenton4Base(self.data[-2])
+		self.setSkelentonPts(self.data[-2], (skl['lx'], skl['ly']), (skl['rx'], skl['ry']), skl['lw'], skl['rw'])
+		logging.debug(skl)
+		skl = self.createSkelenton4Base(self.data[-1])
+		self.setSkelentonPts(self.data[-1], (skl['lx'], skl['ly']), (skl['rx'], skl['ry']), skl['lw'], skl['rw'])
+		logging.debug(skl)
+		return 
+
 		for basePt in self.BaseData():
 			skl = self.getSkelentonPts(basePt)
-			if skl is not None:
-				continue
+			if skl is not None: # 说明已经为之创建了骨架
+				# 倒数第二个骨架要被修正，因为当它是倒数第一时，它的方向是由前一个节点决定的
+				if self.data.index(basePt) != len(self.data) - 2:
+					continue
 			skl = self.createSkelenton4Base(basePt)
+			logging.debug(skl)
 			if skl is not None:
 				self.setSkelentonPts(basePt, (skl['lx'], skl['ly']), (skl['rx'], skl['ry']), skl['lw'], skl['rw'])
 		return
