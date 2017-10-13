@@ -316,6 +316,25 @@ class MPLine(MPBaseLine):
 		logging.debug(skl)
 		return
 
+	def ptsIs2SidesOfLine(pt0, pt1, line0, line1):
+		# line的直线方程为：f(x, y) = (y - yA) * (xA - XB) - (x - xA) * (yA - YB) = 0
+		# CD 在直线两侧的条件为：fC * fD > 0
+		xC, yC = pt0[0], pt0[1]
+		xD, yD = pt1[0], pt1[1]
+		xA, yA = line0[0], line0[1]
+		xB, yB = line1[0], line1[1]
+		fC = (yC - yA) * (xA - xB) - (xC - xA) * (yA - yB)
+		fD = (yD - yA) * (xA - xB) - (xD - xA) * (yA - yB)
+		if (fC > 0 and fD < 0) or (fC < 0 and fD > 0):
+			return True
+		return False
+
+	def isLineIntersect(self, ptA, ptB, ptC, ptD):
+		# 线段AB和CD相交的条件为：CD在直线AB的两侧 && AB在直线CD的两侧
+		if self.ptsIs2SidesOfLine(ptA, ptB, ptC, ptD) and self.ptsIs2SidesOfLine(ptC, ptD, ptA, ptB):
+			return True
+		return False
+
 	def createSingleSideOutline(self, sideName):
 		outline = []	# [(outlineX, outlineY, baseX, baseY)]
 		for pt in self.data:
@@ -333,6 +352,15 @@ class MPLine(MPBaseLine):
 			# 前一个轮廓数据，前面已经插入了首节点，所以一定存在前一个节点
 			outlineX1, outlineY1 = outline[-1][0], outline[-1][1]	
 			baseX1, baseY1 = outline[-1][2], outline[-1][3]
+			# 如果当前肋骨和前一根肋骨相交，则不添加
+			if self.isLineIntersect((baseX1, baseY1), (outlineX1, outlineY1), (baseX, baseY), (sideX, sideY)):
+				continue
+
+			# 如果当前肋骨端子落在cap内，则不添加
+			if self.startCap.PtInCap(sideX, sideY):
+				continue
+
+			outline.append((sideX, sideY, baseX, baseY))
 
 	def updateOutline(self):
 		# 只根据排骨架生成轮廓
@@ -413,6 +441,20 @@ class Cap(object):
 		capMetaData.Load('capMetaData.json')
 		tanInfo = capMetaData.Get(deltaX, deltaY)
 		return tanInfo
+
+	def PtInCap(self, x, y):
+		(ltx, lty) = self.getLeftTop()
+		x = x - ltx
+		y = y - lty
+		if x < 0 or y < 0:
+			return False
+		rows, cols, channels = self.img.shape
+		if y >= rows or x >= cols:
+			return False
+
+		if self.img[y, x, 0] == 0 and self.img[y, x, 1] == 0 and self.img[y, x, 2] == 0:
+			return False
+		return True
 
 class CapTanPointHelper(object):
 	''' 线下工具，用于对指定w、h的cap，生成各个角度的切点 '''
@@ -652,6 +694,20 @@ class CapUT(unittest.TestCase):
 		self.assertEqual(tanInfo['ry'], -9)
 		self.assertEqual(tanInfo['lx'], -1)
 		self.assertEqual(tanInfo['ly'], 18)
+
+	def testa07(self):
+		img = numpy.zeros((300, 300, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		cap = Cap(100, 100)
+		cap.Paste2Img(img)
+		pts = numpy.array([[90, 90], [90, 100], [110, 110], [120, 120], [105, 105]], numpy.int32)
+		cv2.polylines(img, pts.reshape(-1, 1, 2), True, (0, 0, 255), 2)
+		WaitToClose(img)
+		self.assertTrue(cap.PtInCap(90, 90))
+		self.assertFalse(cap.PtInCap(90, 100))
+		self.assertTrue(cap.PtInCap(110, 110))
+		self.assertTrue(cap.PtInCap(105, 105))
+		self.assertFalse(cap.PtInCap(120, 120))
 
 	def testm01(self):
 		# 需要人眼判断切点位置，
