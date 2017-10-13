@@ -276,24 +276,31 @@ class MPLine(MPBaseLine):
 			w = self.calcWidth(v)
 
 			sklb1 = self.getSkelentonPts(ptb1)
-			if sklb1 is not None:
-				lwb1 = sklb1['lw']
-				rwb1 = sklb1['rw']
-				lw = w
-				rw = w
-				if (lw - lwb1) / lwb1 > 0.1:
-					lw = 1.1 * lwb1
-				elif (lw - lwb1) / lwb1 < -0.1:
-					lw = 0.9 * lwb1
-				if (rw - rwb1) / rwb1 > 0.1:
-					rw = 1.1 * rwb1
-				elif (rw - rwb1) / rwb1 < -0.1:
-					rw = 0.9 * rwb1
+			if sklb1 is None: # 如果前一个节点没有肋骨，则使用默认宽度
+				lx = x + (ya1 - y) * w / d
+				ly = y + (x - xa1) * w / d
+				rx = x + (y - ya1) * w / d
+				ry = y + (xa1 - x) * w / d
+				return {'lx':int(lx), 'ly':int(ly), 'lw':w, 'rx':int(rx), 'ry':int(ry), 'rw':w}
 
-				lx = x + (ya1 - y) * lw / d
-				ly = y + (x - xa1) * lw / d
-				rx = x + (y - ya1) * rw / d
-				ry = y + (xa1 - x) * rw / d
+			# 如果前一个节点有肋骨，要保持连续性，不要和前一根肋骨超过10%的波动
+			lwb1 = sklb1['lw']
+			rwb1 = sklb1['rw']
+			lw = w
+			rw = w
+			if (lw - lwb1) / lwb1 > 0.1:
+				lw = 1.1 * lwb1
+			elif (lw - lwb1) / lwb1 < -0.1:
+				lw = 0.9 * lwb1
+			if (rw - rwb1) / rwb1 > 0.1:
+				rw = 1.1 * rwb1
+			elif (rw - rwb1) / rwb1 < -0.1:
+				rw = 0.9 * rwb1
+
+			lx = x + (ya1 - y) * lw / d
+			ly = y + (x - xa1) * lw / d
+			rx = x + (y - ya1) * rw / d
+			ry = y + (xa1 - x) * rw / d
 
 		return {'lx':int(lx), 'ly':int(ly), 'lw':lw, 'rx':int(rx), 'ry':int(ry), 'rw':rw}
 
