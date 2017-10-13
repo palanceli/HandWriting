@@ -314,42 +314,25 @@ class MPLine(MPBaseLine):
 		skl = self.createSkelenton4Base(self.data[-1])
 		self.setSkelentonPts(self.data[-1], (skl['lx'], skl['ly']), (skl['rx'], skl['ry']), skl['lw'], skl['rw'])
 		logging.debug(skl)
-		return 
-
-		for basePt in self.BaseData():
-			skl = self.getSkelentonPts(basePt)
-			if skl is not None: # 说明已经为之创建了骨架
-				# 倒数第二个骨架要被修正，因为当它是倒数第一时，它的方向是由前一个节点决定的
-				if self.data.index(basePt) != len(self.data) - 2:
-					continue
-			skl = self.createSkelenton4Base(basePt)
-			logging.debug(skl)
-			if skl is not None:
-				self.setSkelentonPts(basePt, (skl['lx'], skl['ly']), (skl['rx'], skl['ry']), skl['lw'], skl['rw'])
 		return
 
-		pt0 = self.data[-1]	# 最后一个节点
-		x0, y0, t0 = pt0[0], pt0[1], pt0[2]
-		pt1 = self.data[-2]	# 倒数第二个节点
-		x1, y1, t1 = pt1[0], pt1[1], pt1[2]
-		d1 = math.sqrt((y1 - y0)**2 + (x1 - x0)**2)	# pt1 -> pt0的距离
-		v1 = d1 * 1000000 / (t0 - t1)				# pt1 -> pt0的速度
-		w1 = self.calcWidth(v1)
+	def createSingleSideOutline(self, sideName):
+		outline = []	# [(outlineX, outlineY, baseX, baseY)]
+		for pt in self.data:
+			skl = self.getSkelentonPts(pt)
+			if skl is None:
+				continue
 
-		if len(self.data) >= 3:
-			pt2 = self.data[-3]
-			skl2 = self.getSkelentonPts(pt2)
-			w2 = skl2['width']
-			if (w1 - w2) / w2 > 0.1:
-				w1 = 1.1 * w2
-			elif (w1 - w2) / w2 < -0.1:
-				w1 = 0.9 * w2
+			baseX, baseY = pt[0], pt[1]
+			sideX, sideY = skl[sideName][0], skl[sideName][1]
+			idx = self.data.index(pt)
+			if idx == 0:	# 如果是首节点，直接插入
+				outline.append((sideX, sideY, baseX, baseY))
+				continue
 
-		lx1 = x1 + (y0 - y1) * w1 / d1
-		ly1 = y1 + (x1 - x0) * w1 / d1
-		rx1 = x1 + (y1 - y0) * w1 / d1
-		ry1 = y1 + (x0 - x1) * w1 / d1
-		self.setSkelentonPts(pt1, (lx1, ly1), (rx1, ry1), w1)
+			# 前一个轮廓数据，前面已经插入了首节点，所以一定存在前一个节点
+			outlineX1, outlineY1 = outline[-1][0], outline[-1][1]	
+			baseX1, baseY1 = outline[-1][2], outline[-1][3]
 
 	def updateOutline(self):
 		# 只根据排骨架生成轮廓
