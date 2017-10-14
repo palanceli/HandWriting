@@ -28,6 +28,7 @@ class MPBaseLine(object):
 	# MPLine记录一条笔画，其中x y t是原始数据，由该类负责记录和保存，
 	def __init__(self):
 		self.data = []	# 每个元素是一个[x, y, t] = MPPoint
+		self.maxWidth = None
 
 	def BaseData(self):
 		return self.data
@@ -233,8 +234,9 @@ class MPLine(MPBaseLine):
 		lx, ly, lw, rx, ry, rw = None, None, None, None, None, None
 		x, y, t = basePt[0], basePt[1], basePt[2]
 		idx = self.data.index(basePt)
+
 		if idx == 0:	# 首节点，肋骨是由运笔角度和cap切点决定
-			logging.debug('首节点')
+			# logging.debug('首节点')
 			pta1 = self.data[idx + 1]	# 取后一个节点
 			xa1, ya1, ta1 = pta1[0], pta1[1], pta1[2]
 			deltaY = ya1 - y
@@ -248,59 +250,71 @@ class MPLine(MPBaseLine):
 			ry += y
 			lw = distance(lx, ly, x, y)
 			rw = distance(rx, ry, x, y)
+			self.maxWidth = distance(lx, ly, rx, ry)
 			# logging.debug('lpt:%s, rpt:%s, lw:%s, rw:%s' % ((lx, ly), (rx, ry), lw, rw))
 			return {'lx':lx, 'ly':ly, 'lw': lw, 'rx':rx, 'ry':ry, 'rw':rw}
 		elif idx == len(self.data) - 1:	# 末节点，和普通节点不同在于，它和前一个点（而不是后一个点）确定方向
-			logging.debug('末节点')
+			# logging.debug('末节点')
 			ptb1 = self.data[idx - 1]	# 取前一个节点
 			xb1, yb1, tb1 = ptb1[0], ptb1[1], ptb1[2]
 			d = distance(x, y, xb1, yb1)
-			v = d * 1000000 / (t - tb1)
-			w = self.calcWidth(v)
+			v = d * 1000000 / (t - tb1)	# 每毫秒移动的像素数
 			sklb1 = self.getSkelentonPts(ptb1)
-			if sklb1 is not None:
-				lw = sklb1['lw']
-				rw = sklb1['rw']
+			if sklb1 is None:
+				logging.debug('前一个skl为None!')
+				raise Exception('prev skl is None!')
+			lwb1, rwb1 = sklb1['lw'], sklb1['rw']
+			# 速度在如下区间的变化率deltaW = (w - wb1) / wb1分别为：
+			# (0, 1) 	线性由10%~0
+			#  1		0
+			# (1, 10)	0~ -10%
+			# [10, +∞)	-10%
+			deltaW = 0
+			if v < 1:
+				deltaW = (1 - x) * 0.1
+			elif v > 1 and v < 10:
+				deltaW = -(x - 1) * 0.1 / (10 - 1)
+			elif v >= 10:
+				deltaW = -0.1
 
-				lx = xb1 + (y - yb1) * lw / d
-				ly = yb1 + (xb1 - x) * lw / d
-				rx = xb1 + (yb1 - y) * rw / d
-				ry = yb1 + (x - xb1) * rw / d
-		else: 			# 非首/末节点
-			logging.debug('非首末节点')
-			pta1 = self.data[idx + 1]
-			ptb1 = self.data[idx - 1]
-			xa1, ya1, ta1 = pta1[0], pta1[1], pta1[2]
-			d = distance(x, y, xa1, ya1)
-			v = d * 1000000 / (t - ta1)
-			w = self.calcWidth(v)
+			# 应用变化率后，线宽不大于maxWidth，不小于(maxWidth / 4)
+			if lwb1 * deltaW > d / 2:
+				lw = lwb1 + d / 2
+			elif lwb1 * deltaW < - (d / 2):
+				lw = lwb1 - d / 2
+			else:
+				lw = lwb1 * (1 + deltaW)
+			lw = min(lw, self.maxWidth / 2)
+			lw = max(lw, self.maxWidth / 2 / 2)
 
-			sklb1 = self.getSkelentonPts(ptb1)
-			if sklb1 is None: # 如果前一个节点没有肋骨，则使用默认宽度
-				lx = x + (ya1 - y) * w / d
-				ly = y + (x - xa1) * w / d
-				rx = x + (y - ya1) * w / d
-				ry = y + (xa1 - x) * w / d
-				return {'lx':int(lx), 'ly':int(ly), 'lw':w, 'rx':int(rx), 'ry':int(ry), 'rw':w}
+			if rwb1 * deltaW > d / 2:
+				rw = rwb1 + d / 2
+			elif rwb1 * deltaW < - (d / 2):
+				rw = rwb1 - d / 2
+			else:
+				rw = rwb1 * (1 + deltaW)
+			rw = min(rw, self.maxWidth / 2)
+			rw = max(rw, self.maxWidth / 2 / 2)
 
-			# 如果前一个节点有肋骨，要保持连续性，不要和前一根肋骨超过10%的波动
-			lwb1 = sklb1['lw']
-			rwb1 = sklb1['rw']
-			lw = w
-			rw = w
-			if (lw - lwb1) / lwb1 > 0.1:
-				lw = 1.1 * lwb1
-			elif (lw - lwb1) / lwb1 < -0.1:
-				lw = 0.9 * lwb1
-			if (rw - rwb1) / rwb1 > 0.1:
-				rw = 1.1 * rwb1
-			elif (rw - rwb1) / rwb1 < -0.1:
-				rw = 0.9 * rwb1
-
-			lx = x + (ya1 - y) * lw / d
-			ly = y + (x - xa1) * lw / d
-			rx = x + (y - ya1) * rw / d
-			ry = y + (xa1 - x) * rw / d
+			lx = x + (y - yb1) * lw / d
+			ly = y - (x - xb1) * lw / d
+			rx = x - (y - yb1) * rw / d
+			ry = y + (x - xb1) * rw / d
+			return {'lx':lx, 'ly':ly, 'lw': lw, 'rx':rx, 'ry':ry, 'rw':rw}
+		# 非首/末节点
+		# logging.debug('非首末节点')
+		skl = self.getSkelentonPts(basePt)
+		if skl is None:
+			logging.debug('skl is None!')
+			raise Exception('skl is None!')
+		lw, rw = skl['lw'], skl['rw']
+		pta1 = self.data[idx + 1]
+		xa1, ya1 = pta1[0], pta1[1]
+		d = distance(x, y, xa1, ya1)
+		lx = x + (ya1 - y) * lw / d
+		ly = y - (xa1 - x) * lw / d
+		rx = x - (ya1 - y) * lw / d
+		ry = y + (xa1 - x) * lw / d
 
 		return {'lx':int(lx), 'ly':int(ly), 'lw':lw, 'rx':int(rx), 'ry':int(ry), 'rw':rw}
 
@@ -310,13 +324,13 @@ class MPLine(MPBaseLine):
 
 		skl = self.createSkelenton4Base(self.data[-2])
 		self.setSkelentonPts(self.data[-2], (skl['lx'], skl['ly']), (skl['rx'], skl['ry']), skl['lw'], skl['rw'])
-		logging.debug(skl)
+		# logging.debug(skl)
 		skl = self.createSkelenton4Base(self.data[-1])
 		self.setSkelentonPts(self.data[-1], (skl['lx'], skl['ly']), (skl['rx'], skl['ry']), skl['lw'], skl['rw'])
-		logging.debug(skl)
+		# logging.debug(skl)
 		return
 
-	def ptsIs2SidesOfLine(pt0, pt1, line0, line1):
+	def ptsIs2SidesOfLine(self, pt0, pt1, line0, line1):
 		# line的直线方程为：f(x, y) = (y - yA) * (xA - XB) - (x - xA) * (yA - YB) = 0
 		# CD 在直线两侧的条件为：fC * fD > 0
 		xC, yC = pt0[0], pt0[1]
@@ -361,22 +375,13 @@ class MPLine(MPBaseLine):
 				continue
 
 			outline.append((sideX, sideY, baseX, baseY))
+			# logging.debug('添加轮廓：(%d, %d)' % (sideX, sideY))
+		return outline
 
 	def updateOutline(self):
 		# 只根据排骨架生成轮廓
-		lpts = []
-		rpts = []
-
-		for pt in self.data:
-			skl = self.getSkelentonPts(pt)
-			if skl is None:
-				continue
-
-			x, y = pt[0], pt[1]
-			lx, ly, rx, ry = skl['lpt'][0], skl['lpt'][1], skl['rpt'][0], skl['rpt'][1]
-
-			OutlineHelper.AppendOutline2Pts(lx, ly, x, y, lpts)
-			OutlineHelper.AppendOutline2Pts(rx, ry, x, y, rpts)
+		lpts = self.createSingleSideOutline('lpt')
+		rpts = self.createSingleSideOutline('rpt')
 
 		outline = numpy.zeros((len(lpts) + len(rpts) + 1, 2), numpy.int32)
 		nStart = 0
@@ -402,10 +407,10 @@ class MPLine(MPBaseLine):
 
 		self.startCap.Paste2Img(img)
 		# logging.debug(outlinePts)
-		cv2.polylines(img, [self.outline], True, fillColor, 1, cv2.LINE_AA)	# 绘制轮廓
+		cv2.polylines(img, [self.outline], True, fillColor, 1, cv2.LINE_AA)	# 绘制轮廓线
+		cv2.polylines(img, self.outline.reshape(-1, 1, 2), True, (0, 0, 255), 2)	# 绘制轮廓点
 		# cv2.fillPoly(img, [self.outline], fillColor)
-		
-		# cv2.fillConvexPoly(img, outlinePts, fillColor)
+		# cv2.fillConvexPoly(img, self.outline, fillColor)
 		cv2.polylines(img, self.BaseData2NumpyPts().reshape(-1, 1, 2), True, (0, 0, 255), 2) # 绘制笔迹节点
 		# logging.debug(mpLine.GetBasePoints())
 
@@ -695,7 +700,19 @@ class CapUT(unittest.TestCase):
 		self.assertEqual(tanInfo['lx'], -1)
 		self.assertEqual(tanInfo['ly'], 18)
 
-	def testa07(self):
+	def testm01(self):
+		# 需要人眼判断切点位置，
+		# 需要把getTanPointOnSingleSide()函数中绘制直线的注释打开
+		ctph = CapTanPointHelper()
+		deltaX = -1
+		deltaY = 58
+		tan = float(deltaY) / float(deltaX)
+		radians = math.atan(tan)
+		degrees = math.degrees(radians)
+		lpt, rpt = ctph.calculateTanPoints(degrees)
+		logging.debug('(%d, %d), (%d, %d)' % (lpt[0], lpt[1], rpt[0], rpt[1]))
+
+	def testm02(self):
 		img = numpy.zeros((300, 300, 3), numpy.uint8)
 		img[:, :] = (255, 255, 255)
 		cap = Cap(100, 100)
@@ -708,18 +725,6 @@ class CapUT(unittest.TestCase):
 		self.assertTrue(cap.PtInCap(110, 110))
 		self.assertTrue(cap.PtInCap(105, 105))
 		self.assertFalse(cap.PtInCap(120, 120))
-
-	def testm01(self):
-		# 需要人眼判断切点位置，
-		# 需要把getTanPointOnSingleSide()函数中绘制直线的注释打开
-		ctph = CapTanPointHelper()
-		deltaX = -1
-		deltaY = 58
-		tan = float(deltaY) / float(deltaX)
-		radians = math.atan(tan)
-		degrees = math.degrees(radians)
-		lpt, rpt = ctph.calculateTanPoints(degrees)
-		logging.debug('(%d, %d), (%d, %d)' % (lpt[0], lpt[1], rpt[0], rpt[1]))
 
 class MPLineUT(unittest.TestCase):
 	def setUp(self):
@@ -808,7 +813,7 @@ class MPLineUT(unittest.TestCase):
 		mpLine = MPLine()
 		mpLine.Loads(jstring)
 
-		logging.debug('mpLine skelenton:%s' % (mpLine.skelenton))
+		# logging.debug('mpLine skelenton:%s' % (mpLine.skelenton))
 		img = numpy.zeros((500, 800, 3), numpy.uint8)
 		img[:, :] = (255, 255, 255)
 		mpLine.Draw2Img(img)
