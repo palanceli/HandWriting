@@ -12,6 +12,8 @@ import scipy.interpolate
 import unittest
 import json
 import inspect
+import time
+import timeit
 
 def distance(x1, y1, x2, y2):
 	return math.sqrt((y2 - y1)**2 + (x2 - x1)**2)
@@ -28,7 +30,6 @@ class MPBaseLine(object):
 	# MPLine记录一条笔画，其中x y t是原始数据，由该类负责记录和保存，
 	def __init__(self):
 		self.data = []	# 每个元素是一个[x, y, t] = MPPoint
-		self.maxWidth = None
 
 	def BaseData(self):
 		return self.data
@@ -42,7 +43,7 @@ class MPBaseLine(object):
 
 	def Add(self, x, y, t=None):
 		if t == None:
-			t = cv2.getTickCount()
+			t = timeit.default_timer()
 		point = [x, y, t]
 		self.data.append(point)
 		return point
@@ -129,6 +130,8 @@ class MPLine(MPBaseLine):
 		self.startCap = None
 		self.outline = None
 		self.isEnd = False
+		self.maxlWidth = 0
+		self.maxrWidth = 0
 
 	def fillSkelentonAsBase(self):
 		baseLen = len(self.data)
@@ -184,6 +187,14 @@ class MPLine(MPBaseLine):
 		if len(self.data) == 0:
 			mpPoint = self.AddBegin(x, y, t)
 		else:
+			x1, y1, t1 = self.data[-1][0], self.data[-1][1], self.data[-1][2]
+			if x1 == x and y1 == y: # 如果和上一个点重合，则抛弃
+				return None
+			if t == None:
+				t = timeit.default_timer()
+			if t - t1 < 0.005:	# 如果两次采样的时间间隔小于5ms，则抛弃，因为计算机在这个范围的精度不准确
+				return None
+
 			mpPoint = MPBaseLine.Add(self, x, y, t)
 		if mpPoint is not None:
 			self.skelenton.append(None)
@@ -213,21 +224,6 @@ class MPLine(MPBaseLine):
 			else:
 				self.AddEnd(x, y, t)
 
-	def minWidth(self):
-		return 5
-
-	def maxWidth(self):
-		return 15
-
-	def calcWidth(self, v):
-		# 使用一次线性函数计算线宽
-		# (maxWidth - minWidth) / V = (15 - width)/v
-		# width = 15 - 5 * x / 2
-		V = 4
-		if v > V:
-			return self.minWidth()
-		return 15 - 5 * v / 2
-
 	def createSkelenton4Base(self, basePt):
 		if len(self.data) < 1:	# 只有一个关节，无法计算向量
 			return None
@@ -250,32 +246,54 @@ class MPLine(MPBaseLine):
 			ry += y
 			lw = distance(lx, ly, x, y)
 			rw = distance(rx, ry, x, y)
-			self.maxWidth = distance(lx, ly, rx, ry)
-			# logging.debug('lpt:%s, rpt:%s, lw:%s, rw:%s' % ((lx, ly), (rx, ry), lw, rw))
+			self.maxlWidth = distance(lx, ly, x, y)
+			self.maxrWidth = distance(rx, ry, x, y)
+			logging.debug('脊柱(%3d,%3d), l肋骨(%3d,%3d), r肋骨(%3d,%3d), lw:%2d, rw:%2d' % 
+				(x, y, lx, ly, rx, ry, lw, rw))
 			return {'lx':lx, 'ly':ly, 'lw': lw, 'rx':rx, 'ry':ry, 'rw':rw}
 		elif idx == len(self.data) - 1:	# 末节点，和普通节点不同在于，它和前一个点（而不是后一个点）确定方向
 			# logging.debug('末节点')
 			ptb1 = self.data[idx - 1]	# 取前一个节点
 			xb1, yb1, tb1 = ptb1[0], ptb1[1], ptb1[2]
 			d = distance(x, y, xb1, yb1)
-			v = d * 1000000 / (t - tb1)	# 每毫秒移动的像素数
+			v = d / ((t - tb1) * 1000)	# 每毫秒移动的像素数
+			if idx == 1:	# 补丁：前三个点给速度助力，倾向于收缩
+				v += 0.3
+			elif idx == 2:
+				v += 0.2
+			elif idx == 3:
+				v += 0.1
+
 			sklb1 = self.getSkelentonPts(ptb1)
 			if sklb1 is None:
 				logging.debug('前一个skl为None!')
 				raise Exception('prev skl is None!')
 			lwb1, rwb1 = sklb1['lw'], sklb1['rw']
 			# 速度在如下区间的变化率deltaW = (w - wb1) / wb1分别为：
-			# (0, 1) 	线性由10%~0
-			#  1		0
-			# (1, 10)	0~ -10%
-			# [10, +∞)	-10%
+			# (0, 0.6) 	线性由10%~0
+			#  0.6		0
+			# (0.6, 3)	0~ -10%
+			# [3, +∞)	-10%
 			deltaW = 0
-			if v < 1:
-				deltaW = (1 - x) * 0.1
-			elif v > 1 and v < 10:
-				deltaW = -(x - 1) * 0.1 / (10 - 1)
-			elif v >= 10:
-				deltaW = -0.1
+			if v < 0.6:
+				deltaW = (0.6 - v) * 0.2
+			elif v > 0.6 and v < 3:
+				deltaW = (0.6 - v) * 0.2 / (3 - 1)
+			elif v >= 3:
+				deltaW = -0.2
+			# logging.debug(deltaW)
+			if idx >= 2:
+				ptb2 = self.data[idx - 2]
+				sklb2 = self.getSkelentonPts(ptb2)
+				if sklb2 is None:
+					logging.debug('前一个skl为None!')
+					raise Exception('prev skl is None!')
+				lwb2, rwb2 = sklb2['lw'], sklb2['rw']
+				# 如果翻转，先缓冲一下
+				if (lwb1 - lwb2 > 0 or rwb1 - rwb2 > 0) and deltaW < 0:
+					deltaW = 0
+				elif (lwb1 - lwb2 < 0 or rwb1 - rwb2 < 0) and deltaW > 0:
+					deltaW = 0
 
 			# 应用变化率后，线宽不大于maxWidth，不小于(maxWidth / 4)
 			if lwb1 * deltaW > d / 2:
@@ -284,8 +302,10 @@ class MPLine(MPBaseLine):
 				lw = lwb1 - d / 2
 			else:
 				lw = lwb1 * (1 + deltaW)
-			lw = min(lw, self.maxWidth / 2)
-			lw = max(lw, self.maxWidth / 2 / 2)
+			# logging.debug(lw)
+			lw = min(lw, self.maxlWidth)
+			lw = max(lw, self.maxlWidth / 2)
+			# logging.debug(lw)
 
 			if rwb1 * deltaW > d / 2:
 				rw = rwb1 + d / 2
@@ -293,15 +313,19 @@ class MPLine(MPBaseLine):
 				rw = rwb1 - d / 2
 			else:
 				rw = rwb1 * (1 + deltaW)
-			rw = min(rw, self.maxWidth / 2)
-			rw = max(rw, self.maxWidth / 2 / 2)
+			rw = min(rw, self.maxrWidth)
+			rw = max(rw, self.maxrWidth / 2)
 
 			lx = x + (y - yb1) * lw / d
 			ly = y - (x - xb1) * lw / d
 			rx = x - (y - yb1) * rw / d
 			ry = y + (x - xb1) * rw / d
+			# logging.debug('脊柱(%3d,%3d), l肋骨(%3d,%3d), r肋骨(%3d,%3d), lw:%2d, rw:%2d, v:%5.2f' % 
+			# 	(x, y, lx, ly, rx, ry, lw, rw, v))
+
 			return {'lx':lx, 'ly':ly, 'lw': lw, 'rx':rx, 'ry':ry, 'rw':rw}
-		# 非首/末节点
+
+		# 非首/末节点，当它是末节点的时候已经计算过宽度了，此处只需要更新左右肋骨
 		# logging.debug('非首末节点')
 		skl = self.getSkelentonPts(basePt)
 		if skl is None:
@@ -311,10 +335,13 @@ class MPLine(MPBaseLine):
 		pta1 = self.data[idx + 1]
 		xa1, ya1 = pta1[0], pta1[1]
 		d = distance(x, y, xa1, ya1)
+		# logging.debug('(x, y)=(%3d, %3d), (xa1, ya1)=(%3d, %3d), d=%d' % (x, y, xa1, ya1, d))
 		lx = x + (ya1 - y) * lw / d
 		ly = y - (xa1 - x) * lw / d
 		rx = x - (ya1 - y) * lw / d
 		ry = y + (xa1 - x) * lw / d
+
+		# logging.debug('lpt:(%d, %d) - %d, rpt:(%d, %d) - %d' % (int(lx), int(ly), lw, rx, ry, rw))
 
 		return {'lx':int(lx), 'ly':int(ly), 'lw':lw, 'rx':int(rx), 'ry':int(ry), 'rw':rw}
 
@@ -339,7 +366,7 @@ class MPLine(MPBaseLine):
 		xB, yB = line1[0], line1[1]
 		fC = (yC - yA) * (xA - xB) - (xC - xA) * (yA - yB)
 		fD = (yD - yA) * (xA - xB) - (xD - xA) * (yA - yB)
-		if (fC > 0 and fD < 0) or (fC < 0 and fD > 0):
+		if (fC >= 0 and fD <= 0) or (fC <= 0 and fD >= 0):
 			return True
 		return False
 
@@ -348,6 +375,22 @@ class MPLine(MPBaseLine):
 		if self.ptsIs2SidesOfLine(ptA, ptB, ptC, ptD) and self.ptsIs2SidesOfLine(ptC, ptD, ptA, ptB):
 			return True
 		return False
+
+	def createInterpOutline(self, line):
+		xList = []
+		yList = []
+		for pt in line:
+			xList.append(pt[0])
+			yList.append(pt[1])
+
+		tck, u = scipy.interpolate.splprep([xList, yList], k=3, s=0)
+		xInterp = numpy.linspace(0, 1, num=20, endpoint=True)
+		out = scipy.interpolate.splev(xInterp, tck)
+
+		outline = []
+		for i in range(len(out[0])):
+			outline.append([out[0][i], out[1][i]])
+		return outline
 
 	def createSingleSideOutline(self, sideName):
 		outline = []	# [(outlineX, outlineY, baseX, baseY)]
@@ -373,9 +416,11 @@ class MPLine(MPBaseLine):
 			# 如果当前肋骨端子落在cap内，则不添加
 			if self.startCap.PtInCap(sideX, sideY):
 				continue
-
 			outline.append((sideX, sideY, baseX, baseY))
 			# logging.debug('添加轮廓：(%d, %d)' % (sideX, sideY))
+		# 多于4个点则采用3次样条插值
+		# if len(outline) >= 4:
+		# 	return self.createInterpOutline(outline)
 		return outline
 
 	def updateOutline(self):
@@ -435,6 +480,8 @@ class Cap(object):
 
 		x, y = self.getLeftTop()
 		h, w, channels = self.img.shape
+		x, y = int(x), int(y)
+		h, w = int(h), int(w)
 		roi = img[y : y+h, x : x+w]
 		bg = cv2.bitwise_and(roi, roi, mask=mask_inv)
 		dst = cv2.add(bg, fg)
@@ -457,6 +504,7 @@ class Cap(object):
 		if y >= rows or x >= cols:
 			return False
 
+		x, y = int(x), int(y)
 		if self.img[y, x, 0] == 0 and self.img[y, x, 1] == 0 and self.img[y, x, 2] == 0:
 			return False
 		return True
@@ -804,6 +852,111 @@ class MPLineUT(unittest.TestCase):
 		WaitToClose(img)
 
 	def test04(self):
+		''' 跟踪鼠标轨迹，只记录轨迹点，不做多余运算，和test04作对比（只能绘制一笔） '''
+		jsonPath = '%s/mpLine.json' % (self.getDataDir())
+		img = numpy.zeros((500, 800, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		cv2.imshow('img', img)
+		
+		mpLine = []
+
+		# 将起笔、运笔、抬笔交给画笔处理
+		def mouseCallback(event, x, y, flags, param):
+			app = param
+			if event == cv2.EVENT_LBUTTONDOWN:
+				mpLine.append((x, y, timeit.default_timer()))
+			elif event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
+				x1, y1, t1 = mpLine[-1][0], mpLine[-1][1], mpLine[-1][2]
+				if x1 == x and y1 == y:
+					return
+				t = timeit.default_timer()
+				if t - t1 < 0.005:
+					return
+				mpLine.append((x, y, t))
+
+			elif event == cv2.EVENT_LBUTTONUP:
+				x1, y1 = mpLine[-1][0], mpLine[-1][1]
+				if not (x1 == x and y1 == y):
+					mpLine.append((x, y, timeit.default_timer()))
+
+				pts = []
+				for pt in mpLine:
+					x, y, t = pt[0], pt[1], pt[2]
+					pts.append([x, y])
+					if mpLine.index(pt) == 0:
+						logging.debug('(x, y)=(%3d, %3d), t=%13.6f' % (x, y, t))
+					else:
+						idx = mpLine.index(pt)
+						x1, y1, t1 = mpLine[idx - 1][0], mpLine[idx - 1][1], mpLine[idx - 1][2]
+						d = distance(x1, y1, x, y)
+						deltaT = (t - t1) * 1000
+						v = d / deltaT
+						logging.debug('(x, y)=(%3d, %3d), t=%13.6f, v=%5.2f, d=%d, deltaT=%5.2f(ms)' % 
+							(x, y, t, v, d, deltaT))
+				img[:, :] = (255, 255, 255)
+
+				pts = numpy.array(pts, numpy.int32)
+				cv2.polylines(img, pts.reshape(-1, 1, 2), True, (0, 0, 0), 3)
+				jstring = json.dumps(mpLine)
+				with open(jsonPath, 'w') as f:
+					f.write(jstring)
+
+		cv2.setMouseCallback('img', mouseCallback, self)
+
+		# 响应快捷键
+		while True:
+			cv2.imshow('img', img)
+			pressedKey = cv2.waitKey(10)	# 等待10ms，如果无按键，返回-1
+			if pressedKey == -1:
+				continue
+
+			if pressedKey & 0xFF == 27:	# ESC 	退出
+				break
+
+		cv2.destroyAllWindows()
+
+	def test05(self):
+		''' 跟踪鼠标轨迹，生成MPLine，并保存。（只能绘制一笔） '''
+		jsonPath = '%s/mpLine.json' % (self.getDataDir())
+		img = numpy.zeros((500, 800, 3), numpy.uint8)
+		img[:, :] = (255, 255, 255)
+		cv2.imshow('img', img)
+		
+		mpLine = MPLine()
+
+		# 将起笔、运笔、抬笔交给画笔处理
+		def mouseCallback(event, x, y, flags, param):
+			app = param
+			if event == cv2.EVENT_LBUTTONDOWN:
+				mpLine.AddBegin(x, y)
+				mpLine.Draw2Img(img)
+			elif event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
+				mpLine.AddContinue(x, y)
+				img[:, :] = (255, 255, 255)
+				mpLine.Draw2Img(img)
+			elif event == cv2.EVENT_LBUTTONUP:
+				mpLine.AddEnd(x, y)
+				img[:, :] = (255, 255, 255)
+				mpLine.Draw2Img(img)
+				jstring = mpLine.Dumps()
+				with open(jsonPath, 'w') as f:
+					f.write(jstring)
+
+		cv2.setMouseCallback('img', mouseCallback, self)
+
+		# 响应快捷键
+		while True:
+			cv2.imshow('img', img)
+			pressedKey = cv2.waitKey(10)	# 等待10ms，如果无按键，返回-1
+			if pressedKey == -1:
+				continue
+
+			if pressedKey & 0xFF == 27:	# ESC 	退出
+				break
+
+		cv2.destroyAllWindows()
+
+	def test06(self):
 		''' 读取笔迹数据，生成并绘制轮廓 '''
 		jstring = ''
 		jsonPath = '%s/mpLine.json' % (self.getDataDir())
@@ -818,6 +971,7 @@ class MPLineUT(unittest.TestCase):
 		img[:, :] = (255, 255, 255)
 		mpLine.Draw2Img(img)
 		WaitToClose(img)
+
 
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
