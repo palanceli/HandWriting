@@ -9,139 +9,7 @@ import scipy
 import scipy.interpolate
 import matplotlib
 import matplotlib.pyplot
-
-class Cap(object):
-	def __init__(self):
-		self.capImg = None
-		self.offsetX = None
-		self.offsetY = None
-
-	def anchors(self):
-		rows, cols, channels = self.capImg.shape
-		anchors = [
-			[cols * 0.65, rows * 0.6], 	# 0 中心点
-			[0, 0], 								# 1 左上尖
-			[cols * 0.4 - 1, rows * 0.07 + 1], 	# 2 颈
-			[cols * 0.8 - 1, rows * 0.25 + 1],	# 3 肩
-			[cols * 1.0 - 1, rows * 0.6],		# 4 右
-			[cols * 0.95 - 1, rows * 0.8],	# 5 臀
-			[cols * 0.65, rows * 1.0 - 1],	# 6 底
-			[cols * 0.48, rows * 0.95 - 1],	# 7 左下尖
-			[cols * 0.32 + 1, rows * 0.6]]	# 8 腹
-
-		return anchors
-
-	def resize(self, img, width = None, height = None):
-		factor = None
-		rows, cols, channels = img.shape
-		if width is not None:
-			factor = float(width) / float(cols)
-		if height is not None:
-			factor = float(height) / float(rows)
-		if factor is None:
-			raise Exception('factor is None.')
-
-		return cv2.resize(img, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC)
-		
-	def Paste2Img(self, img):
-		capgray = cv2.cvtColor(self.capImg, cv2.COLOR_BGR2GRAY)
-		ret, mask = cv2.threshold(capgray, 20, 255, cv2.THRESH_BINARY)
-		mask_inv = cv2.bitwise_not(mask)
-		fg = cv2.bitwise_and(self.capImg, self.capImg, mask=mask)
-
-		rows, cols, channels = self.capImg.shape
-		roi = img[self.offsetY : self.offsetY+rows, self.offsetX : self.offsetX+cols]
-		bg = cv2.bitwise_and(roi, roi, mask=mask_inv)
-		dst = cv2.add(bg, fg)
-		img[self.offsetY : self.offsetY+rows, self.offsetX : self.offsetX+cols] = dst
-		return img
-
-class CapEnd(Cap):
-	def __init__(self, type, basePt, lPt, rPt):
-		Cap.__init__(self)
-		self.type = type
-		img = cv2.imread('dot.png')
-		h0, w0, channels = img.shape 	# 原始尺寸
-		if self.type == 1:
-			h1 = rPt[1] - lPt[1] 		# 预期高度
-			self.capImg = self.resize(img, width=None, height=h1)
-			self.offsetX = int(lPt[0])
-			self.offsetY = int(lPt[1])
-		else:
-			logging.debug('To Do ...')
-
-	def Anchors(self):
-		anchors = self.anchors()
-		if self.type == 0:	# 中心点
-			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, )]
-		elif self.type == 1:	# 横
-			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 6)]
-		else:
-			logging.debug('To Do ...')
-
-class CapStart(Cap):
-	def __init__(self, basePt, lPt, rPt):
-		Cap.__init__(self)
-		# basePt为脊柱关节，lPt、rPt为左右肋骨端点
-		self.type = self.getStartType(basePt, lPt, rPt)
-		logging.debug(self.type)
-		img = cv2.imread('dot.png')
-		h0, w0, channels = img.shape 	# 原始尺寸
-		if self.type == 1:
-			h1 = rPt[1] - lPt[1] 			# 预期高度
-			self.capImg = self.resize(img, width=None, height=h1)
-			anchors = self.anchors()
-			self.offsetX = int(rPt[0] - anchors[6][0])
-			self.offsetY = int(rPt[1] - anchors[6][1])
-		else:
-			logging.error('To Do ...')
-
-	def getStartType(self, basePt, lPt, rPt):
-		# (横：1)，(竖：2)， (撇：3)，(捺：4)，(勾：5)
-		deltaY = rPt[1] - lPt[1]
-		deltaX = rPt[0] - lPt[0]
-		logging.debug('deltaX:%d, deltaY:%d' % (deltaX, deltaY))
-		if deltaX == 0: 	# 水平情况
-			if deltaY < 0:
-				return 3 	# 向左，撇
-			return 1 		# 向右，横
-
-		tan = abs(float(deltaY) / float(deltaX))
-		if deltaY <= 0 and deltaX > 0:
-			if tan < 0.25: 
-				return 2 	# (0°~15°)竖↓
-			elif tan >= 0.25 and tan < 3.8:
-				return 4 	# [15°~75°)捺↘
-			return 1 		# [75°~ 90°)横→
-
-		if deltaY <= 0 and deltaX < 0:
-			if tan < 3.8:
-				return 5 	# (0°~75°)勾↑
-			return 1 		# [75°~ 90°)横→
-
-		if deltaY >= 0 and deltaX > 0:
-			if tan < 0.25:
-				return 2 	# (0°~15°)竖↓
-			elif tan >= 0.25 and tan < 3.8:
-				return 3 	# [15°~ 90°]撇↙←
-			return 5 		# (0°~90°)勾↑←
-
-		if deltaY >= 0 and deltaX < 0:
-			return 5 		# (0°~90°)勾↑←
-
-	def Anchors(self):
-		anchors = self.anchors()
-		if self.type == 0:	# 中心点
-			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, )]
-		elif self.type == 1:	# 横
-			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 1, 6)]
-		elif self.type == 2:	# 竖
-			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 4, 8)]
-		elif self.type == 3:	# 撇
-			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 7, 8)]
-		elif self.type == 4:	# 捺
-			return [[anchors[i][0] + self.offsetX, anchors[i][1] + self.offsetY] for i in (0, 3, 7)]
-
+import magicpen
 
 class samples(object):
 	def waitToClose(self, img):
@@ -159,7 +27,7 @@ class samples(object):
 		lPt = [100, 100]
 		rPt = [100, 130]
 
-		capStart = CapStart(basePt, lPt, rPt)
+		capStart = magicpen.CapStart(basePt, lPt, rPt)
 
 		# 绘制cap所有锚点
 		# cv2.polylines(img, numpy.array(cap.Anchors(3, 8), numpy.int32).reshape(-1, 1, 2), True, (0, 0, 255), 3)
@@ -171,7 +39,7 @@ class samples(object):
 		basePt = [200, 115]
 		lPt = [200, 100]
 		rPt = [200, 130]
-		capEnd = CapEnd(1, basePt, lPt, rPt)
+		capEnd = magicpen.CapEnd(1, basePt, lPt, rPt)
 		capEnd.Paste2Img(img)
 		anchorsEnd = capEnd.Anchors()
 
