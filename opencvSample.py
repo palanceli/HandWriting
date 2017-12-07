@@ -513,9 +513,21 @@ class samples(object):
 
 		self.waitToClose(img)
 
+	def caseR09(self):
+		''' 读取摄像头，并显示 '''
+        cap = cv2.VideoCapture(0)
+        while True:
+            cameraImg = cap.read()[1]
+
+            cv2.imshow('image', cameraImg)
+            key = cv2.waitKey(1)
+
+            if cv2.waitKey(20) & 0xFF == 27:
+                break
+
 
 if __name__ == '__main__':
     logFmt = '%(asctime)s %(lineno)04d %(levelname)-8s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=logFmt, datefmt='%H:%M',)
     s = samples()
-    s.case11()
+    s.caseR09()
